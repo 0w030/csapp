@@ -1,0 +1,44 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    padding: 20px;
+    display: block;
+    text-align: center;
+    background-color: #fafafa;
+}
+
+.container {
+    max-width: 500px;
+    margin: 0 auto;
+}
+
+button {
+    padding: 12px 24px;
+    font-size: 16px;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+}
+
+.result-box, .status-box {
+    margin-top: 20px;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+    background: white;
+}
+
+/* 狀態顏色 */
+.status-waiting { color: #666; }
+.status-success { color: green; font-weight: bold; }
+.status-fail { color: red; font-weight: bold; }
+
+/* 關鍵：當相機開啟時，Capacitor 會在外層加上一個 class，我們要把背景變透明 */
+body.barcode-scanner-active {
+    background-color: transparent !important;
+}
+body.barcode-scanner-active #app-container {
+    display: none; /* 掃描時先隱藏原本的 UI，或者做一個十字準心 */
+}
