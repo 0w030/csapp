@@ -7,6 +7,7 @@ const scanButton = document.getElementById('start-scan-btn');
 const scanResultEl = document.getElementById('scan-result');
 const verifyStatusEl = document.getElementById('verify-status');
 const scanModeText = document.getElementById('scan-mode-text');
+const deviceUuidEl = document.getElementById('device-uuid');
 const appContainer = document.getElementById('app-container');
 const videoElement = document.getElementById('qr-video');
 const canvasElement = document.getElementById('qr-canvas');
@@ -14,8 +15,12 @@ const canvasElement = document.getElementById('qr-canvas');
 let scanStream = null;
 let scanInterval = null;
 let webBarcodeDetector = null;
+let deviceUuid = null;
 
 scanButton.addEventListener('click', startScan);
+
+deviceUuid = getOrCreateDeviceUuid();
+updateDeviceUuidDisplay();
 
 async function startScan() {
     resetStatus();
@@ -82,6 +87,7 @@ async function startNativeScan(BarcodeScanner) {
             scanResultEl.innerText = result.content;
             verifyStatusEl.innerText = '掃描完成';
             verifyStatusEl.className = 'status-success';
+            logScanPackage(result.content);
         } else {
             scanResultEl.innerText = '未取得掃描內容。';
             verifyStatusEl.innerText = '掃描失敗';
@@ -118,9 +124,11 @@ async function startWebScan() {
                 if (results.length > 0) {
                     const qr = results[0];
                     stopWebScan();
-                    scanResultEl.innerText = qr.rawValue || '未取得掃描內容。';
+                    const content = qr.rawValue || '未取得掃描內容。';
+                    scanResultEl.innerText = content;
                     verifyStatusEl.innerText = '掃描完成';
                     verifyStatusEl.className = 'status-success';
+                    logScanPackage(content);
                 }
             } catch (error) {
                 console.error('Web 掃描偵測錯誤：', error);
@@ -169,4 +177,32 @@ function resetStatus() {
     verifyStatusEl.innerText = '等待掃描中...';
     verifyStatusEl.className = 'status-waiting';
     scanModeText.innerText = '目前掃描模式：等待判斷';
+}
+
+function getOrCreateDeviceUuid() {
+    const storedUuid = localStorage.getItem('device_uuid');
+    if (storedUuid) {
+        return storedUuid;
+    }
+
+    const newUuid = (typeof crypto?.randomUUID === 'function')
+        ? crypto.randomUUID()
+        : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = crypto.getRandomValues(new Uint8Array(1))[0] % 16;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+
+    localStorage.setItem('device_uuid', newUuid);
+    return newUuid;
+}
+
+function updateDeviceUuidDisplay() {
+    if (deviceUuidEl) {
+        deviceUuidEl.innerText = deviceUuid || '尚未產生 UUID';
+    }
+}
+
+function logScanPackage(qrContent) {
+    console.log({ qrContent, deviceId: deviceUuid });
 }
