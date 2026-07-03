@@ -22,7 +22,7 @@ button {
     cursor: pointer;
 }
 
-.result-box, .status-box {
+.result-box, .status-box, .device-info-box {
     margin-top: 20px;
     padding: 10px;
     border: 1px solid #ddd;
@@ -33,7 +33,26 @@ button {
 /* 狀態顏色 */
 .status-waiting { color: #666; }
 .status-success { color: green; font-weight: bold; }
-.status-fail { color: red; font-weight: bold; }
+.status-fail, .status-error { color: red; font-weight: bold; }
+
+.device-info-box pre {
+    margin: 0;
+    padding: 12px;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 0.92rem;
+    color: #333;
+    background-color: #f7f7f7;
+    border: 1px solid #e0e0e0;
+    border-radius: 4px;
+    white-space: pre-wrap;
+    word-break: break-all;
+}
+
+.device-info-label {
+    margin: 0 0 6px;
+    font-size: 0.95rem;
+    color: #555;
+}
 
 /* 關鍵：當相機開啟時，Capacitor 會在外層加上一個 class，我們要把背景變透明 */
 body.barcode-scanner-active {
