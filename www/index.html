@@ -11,6 +11,7 @@
         <h1>QR Code 驗證系統</h1>
         
         <button id="start-scan-btn">開啟相機掃描</button>
+        <p id="scan-mode-text" class="scan-mode-text">目前掃描模式：等待判斷</p>
 
         <div class="result-box">
             <h3>掃描結果：</h3>
@@ -22,6 +23,9 @@
             <p id="verify-status" class="status-waiting">等待掃描中...</p>
         </div>
     </div>
+
+    <video id="qr-video" hidden muted playsinline></video>
+    <canvas id="qr-canvas" hidden></canvas>
 
     <script src="app.js"></script>
 </body>
