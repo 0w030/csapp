@@ -1,5 +1,4 @@
-﻿
-const scanButton = document.getElementById('start-scan-btn');
+﻿const scanButton = document.getElementById('start-scan-btn');
 const scanResultEl = document.getElementById('scan-result');
 const verifyStatusEl = document.getElementById('verify-status');
 const scanModeText = document.getElementById('scan-mode-text');
@@ -22,40 +21,17 @@ async function startScan() {
     resetStatus();
     scanButton.disabled = true;
 
-    const nativeScanner = getNativeScanner();
-    const nativeAvailable = nativeScanner && isNativeCapacitor();
-    console.log('startScan: nativeAvailable=', nativeAvailable, 'nativeScanner=', nativeScanner, 'isNativePlatform=', isNativeCapacitor());
     const webAvailable = await isWebBarcodeScannerSupported();
     console.log('startScan: webAvailable=', webAvailable);
 
-    if (nativeAvailable) {
-        scanModeText.innerText = '目前掃描模式：原生 Capacitor 掃描';
-        if (typeof nativeScanner.scan === 'function') {
-            await startNativeScanBuiltIn(nativeScanner);
-        } else {
-            await startNativeScan(nativeScanner);
-        }
-    } else if (webAvailable) {
+    if (webAvailable) {
         scanModeText.innerText = '目前掃描模式：瀏覽器 QR 掃描';
         await startWebScan();
     } else {
-        alert('此裝置/瀏覽器無法使用掃描功能。\n請從 Android 原生 App 或支援 BarcodeDetector 的瀏覽器上開啟。');
+        alert('此裝置/瀏覽器無法使用掃描功能。\n請使用支援 BarcodeDetector 的瀏覽器上開啟。');
     }
 
     scanButton.disabled = false;
-}
-
-function getNativeScanner() {
-    return window.Capacitor?.Plugins?.BarcodeScanner
-        || window.Capacitor?.Plugins?.BarcodeScanning
-        || null;
-}
-
-function isNativeCapacitor() {
-    if (typeof window.Capacitor?.isNativePlatform === 'function') {
-        return window.Capacitor.isNativePlatform();
-    }
-    return !!window.Capacitor && window.Capacitor.platform !== 'web';
 }
 
 async function isWebBarcodeScannerSupported() {
@@ -72,109 +48,6 @@ async function isWebBarcodeScannerSupported() {
     } catch (error) {
         console.warn('BarcodeDetector 支援查詢失敗：', error);
         return false;
-    }
-}
-
-async function startNativeScan(BarcodeScanner) {
-    let barcodeListener = null;
-    try {
-        console.log('startNativeScan: BarcodeScanner=', BarcodeScanner);
-        if (typeof BarcodeScanner.requestPermissions !== 'function') {
-            throw new Error('BarcodeScanner plugin 無法取得 requestPermissions 函式。');
-        }
-
-        const permissionStatus = await BarcodeScanner.requestPermissions();
-        console.log('camera permissionStatus=', permissionStatus);
-        if (permissionStatus.camera !== 'granted') {
-            const detail = permissionStatus.camera === 'denied'
-                ? '請前往裝置設定允許相機權限，或重新安裝 App 後重新授權。'
-                : '請確認是否已授權相機存取。';
-            alert('必須允許相機權限才能掃描 QR Code。\n' + detail);
-            if (typeof BarcodeScanner.openSettings === 'function') {
-                try {
-                    await BarcodeScanner.openSettings();
-                } catch (settingsError) {
-                    console.warn('開啟設定失敗：', settingsError);
-                }
-            }
-            return;
-        }
-
-        prepareScannerUi();
-        verifyStatusEl.innerText = '啟動原生相機掃描中...';
-        verifyStatusEl.className = 'status-waiting';
-
-        barcodeListener = await BarcodeScanner.addListener('barcodeScanned', async event => {
-            console.log('barcodeScanned event=', event);
-            const content = event?.barcode?.rawValue || event?.barcode?.displayValue;
-            if (!content) {
-                return;
-            }
-
-            scanResultEl.innerText = content;
-            verifyStatusEl.innerText = '掃描完成';
-            verifyStatusEl.className = 'status-success';
-            logScanPackage(content);
-
-            if (barcodeListener && typeof barcodeListener.remove === 'function') {
-                await barcodeListener.remove();
-                barcodeListener = null;
-            }
-            try {
-                if (typeof BarcodeScanner.stopScan === 'function') {
-                    await BarcodeScanner.stopScan();
-                }
-            } catch (stopError) {
-                console.warn('停止原生掃描失敗：', stopError);
-            }
-            restoreUi();
-        });
-
-        await BarcodeScanner.startScan();
-    } catch (error) {
-        if (barcodeListener && typeof barcodeListener.remove === 'function') {
-            barcodeListener.remove();
-            barcodeListener = null;
-        }
-        restoreUi();
-        console.error('startNativeScan failed:', error);
-
-        if (typeof BarcodeScanner.scan === 'function') {
-            console.warn('嘗試使用內建掃描備援模式...');
-            await startNativeScanBuiltIn(BarcodeScanner, error);
-            return;
-        }
-
-        alert('掃描發生錯誤：' + (error?.message || error));
-        verifyStatusEl.innerText = '掃描錯誤';
-        verifyStatusEl.className = 'status-error';
-    }
-}
-
-async function startNativeScanBuiltIn(BarcodeScanner, originalError) {
-    try {
-        verifyStatusEl.innerText = '啟動原生內建掃描備援方案...';
-        verifyStatusEl.className = 'status-waiting';
-
-        const result = await BarcodeScanner.scan({ formats: ['QR_CODE'], autoZoom: true });
-        const barcode = result?.barcodes?.[0];
-        const content = barcode?.rawValue || barcode?.displayValue;
-
-        if (content) {
-            scanResultEl.innerText = content;
-            verifyStatusEl.innerText = '掃描完成';
-            verifyStatusEl.className = 'status-success';
-            logScanPackage(content);
-        } else {
-            throw new Error('備援模式未取得掃描資料。');
-        }
-    } catch (fallbackError) {
-        console.error('startNativeScanBuiltIn failed:', fallbackError, 'originalError=', originalError);
-        alert('原生掃描啟動失敗：' + (fallbackError?.message || fallbackError));
-        verifyStatusEl.innerText = '掃描錯誤';
-        verifyStatusEl.className = 'status-error';
-    } finally {
-        restoreUi();
     }
 }
 
