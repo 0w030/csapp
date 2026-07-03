@@ -31,20 +31,20 @@
         </div>
 
         <!-- 區塊二：語音指令系統擴充 (新增於此) -->
-        <div class="voice-section" style="margin-top: 30px; border-top: 2px dashed #ccc; padding-top: 20px;">
+        <div class="voice-section">
             <h2>語音指令系統</h2>
             <button id="start-voice-btn">開始語意輸入</button>
             <p id="voice-status" class="scan-mode-text">狀態：點擊按鈕開始</p>
             
-            <div class="result-box" style="background-color: #f8f9fa;">
+            <div class="voice-result-box result-box">
                 <h3>語音轉文字結果：</h3>
-                <p id="voice-result" style="color: #007bff; font-weight: bold;">（等待語音輸入...）</p>
+                <p id="voice-result">（等待語音輸入...）</p>
             </div>
         </div>
     </div>
 
     <!-- Web 掃描所需的視訊與畫布元素 -->
-    <video id="qr-video" hidden muted playsinline></video>
+    <video id="qr-video" hidden muted></video>
     <canvas id="qr-canvas" hidden></canvas>
 
     <script src="app.js"></script>

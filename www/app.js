@@ -24,11 +24,17 @@ async function startScan() {
 
     const nativeScanner = getNativeScanner();
     const nativeAvailable = nativeScanner && isNativeCapacitor();
+    console.log('startScan: nativeAvailable=', nativeAvailable, 'nativeScanner=', nativeScanner, 'isNativePlatform=', isNativeCapacitor());
     const webAvailable = await isWebBarcodeScannerSupported();
+    console.log('startScan: webAvailable=', webAvailable);
 
     if (nativeAvailable) {
         scanModeText.innerText = '目前掃描模式：原生 Capacitor 掃描';
-        await startNativeScan(nativeScanner);
+        if (typeof nativeScanner.scan === 'function') {
+            await startNativeScanBuiltIn(nativeScanner);
+        } else {
+            await startNativeScan(nativeScanner);
+        }
     } else if (webAvailable) {
         scanModeText.innerText = '目前掃描模式：瀏覽器 QR 掃描';
         await startWebScan();
@@ -40,7 +46,9 @@ async function startScan() {
 }
 
 function getNativeScanner() {
-    return window.Capacitor?.Plugins?.BarcodeScanner ?? null;
+    return window.Capacitor?.Plugins?.BarcodeScanner
+        || window.Capacitor?.Plugins?.BarcodeScanning
+        || null;
 }
 
 function isNativeCapacitor() {
@@ -68,33 +76,105 @@ async function isWebBarcodeScannerSupported() {
 }
 
 async function startNativeScan(BarcodeScanner) {
+    let barcodeListener = null;
     try {
+        console.log('startNativeScan: BarcodeScanner=', BarcodeScanner);
+        if (typeof BarcodeScanner.requestPermissions !== 'function') {
+            throw new Error('BarcodeScanner plugin 無法取得 requestPermissions 函式。');
+        }
+
         const permissionStatus = await BarcodeScanner.requestPermissions();
+        console.log('camera permissionStatus=', permissionStatus);
         if (permissionStatus.camera !== 'granted') {
-            alert('必須允許相機權限才能掃描 QR Code');
+            const detail = permissionStatus.camera === 'denied'
+                ? '請前往裝置設定允許相機權限，或重新安裝 App 後重新授權。'
+                : '請確認是否已授權相機存取。';
+            alert('必須允許相機權限才能掃描 QR Code。\n' + detail);
+            if (typeof BarcodeScanner.openSettings === 'function') {
+                try {
+                    await BarcodeScanner.openSettings();
+                } catch (settingsError) {
+                    console.warn('開啟設定失敗：', settingsError);
+                }
+            }
             return;
         }
 
         prepareScannerUi();
-        const result = await BarcodeScanner.startScan();
-        restoreUi();
+        verifyStatusEl.innerText = '啟動原生相機掃描中...';
+        verifyStatusEl.className = 'status-waiting';
 
-        if (result?.hasContent) {
-            scanResultEl.innerText = result.content;
+        barcodeListener = await BarcodeScanner.addListener('barcodeScanned', async event => {
+            console.log('barcodeScanned event=', event);
+            const content = event?.barcode?.rawValue || event?.barcode?.displayValue;
+            if (!content) {
+                return;
+            }
+
+            scanResultEl.innerText = content;
             verifyStatusEl.innerText = '掃描完成';
             verifyStatusEl.className = 'status-success';
-            logScanPackage(result.content);
-        } else {
-            scanResultEl.innerText = '未取得掃描內容。';
-            verifyStatusEl.innerText = '掃描失敗';
-            verifyStatusEl.className = 'status-error';
-        }
+            logScanPackage(content);
+
+            if (barcodeListener && typeof barcodeListener.remove === 'function') {
+                await barcodeListener.remove();
+                barcodeListener = null;
+            }
+            try {
+                if (typeof BarcodeScanner.stopScan === 'function') {
+                    await BarcodeScanner.stopScan();
+                }
+            } catch (stopError) {
+                console.warn('停止原生掃描失敗：', stopError);
+            }
+            restoreUi();
+        });
+
+        await BarcodeScanner.startScan();
     } catch (error) {
+        if (barcodeListener && typeof barcodeListener.remove === 'function') {
+            barcodeListener.remove();
+            barcodeListener = null;
+        }
         restoreUi();
-        console.error(error);
+        console.error('startNativeScan failed:', error);
+
+        if (typeof BarcodeScanner.scan === 'function') {
+            console.warn('嘗試使用內建掃描備援模式...');
+            await startNativeScanBuiltIn(BarcodeScanner, error);
+            return;
+        }
+
         alert('掃描發生錯誤：' + (error?.message || error));
         verifyStatusEl.innerText = '掃描錯誤';
         verifyStatusEl.className = 'status-error';
+    }
+}
+
+async function startNativeScanBuiltIn(BarcodeScanner, originalError) {
+    try {
+        verifyStatusEl.innerText = '啟動原生內建掃描備援方案...';
+        verifyStatusEl.className = 'status-waiting';
+
+        const result = await BarcodeScanner.scan({ formats: ['QR_CODE'], autoZoom: true });
+        const barcode = result?.barcodes?.[0];
+        const content = barcode?.rawValue || barcode?.displayValue;
+
+        if (content) {
+            scanResultEl.innerText = content;
+            verifyStatusEl.innerText = '掃描完成';
+            verifyStatusEl.className = 'status-success';
+            logScanPackage(content);
+        } else {
+            throw new Error('備援模式未取得掃描資料。');
+        }
+    } catch (fallbackError) {
+        console.error('startNativeScanBuiltIn failed:', fallbackError, 'originalError=', originalError);
+        alert('原生掃描啟動失敗：' + (fallbackError?.message || fallbackError));
+        verifyStatusEl.innerText = '掃描錯誤';
+        verifyStatusEl.className = 'status-error';
+    } finally {
+        restoreUi();
     }
 }
 
@@ -104,6 +184,7 @@ async function startWebScan() {
         scanStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
         videoElement.srcObject = scanStream;
         videoElement.hidden = false;
+        videoElement.style.display = 'block';
         await videoElement.play();
 
         prepareScannerUi();
@@ -203,21 +284,31 @@ async function toggleVoiceRecording() {
 // 3. 開始錄音
 async function startVoiceRecording() {
     voiceAudioChunks = []; // 清空之前的音檔暫存
-    
+
     try {
-        // 【關鍵修復】如果是在 Android 原生環境，先確保 WebView 允許音訊權限
-        // 現代 Android WebView 在呼叫 getUserMedia 之前，必須確保權限已在作業系統層級被允許
-        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-            // 這裡利用一個小技巧：如果你的相機外掛能用，代表權限橋接是通的
-            // 我們直接透過 navigator.mediaDevices 請求，但若失敗，引導用戶去設定
-            console.log("偵測到 Android 原生環境，準備請求麥克風權限...");
+        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+            throw new Error('此裝置不支援 navigator.mediaDevices.getUserMedia。');
         }
 
-        // 請求 Android/瀏覽器 的麥克風錄音權限
+        const micState = await getPermissionState('microphone');
+        if (micState === 'denied') {
+            alert('麥克風權限已被拒絕，請前往系統設定允許本 App 使用麥克風。');
+            return;
+        }
+
+        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+            console.log('偵測到 Android 原生環境，準備請求麥克風權限...');
+        }
+
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        
+
+        if (typeof MediaRecorder === 'undefined') {
+            stream.getTracks().forEach(track => track.stop());
+            throw new Error('此 WebView 目前不支援 MediaRecorder。');
+        }
+
         voiceMediaRecorder = new MediaRecorder(stream);
-        
+
         voiceMediaRecorder.ondataavailable = (event) => {
             if (event.data && event.data.size > 0) {
                 voiceAudioChunks.push(event.data);
@@ -227,24 +318,40 @@ async function startVoiceRecording() {
         voiceMediaRecorder.onstop = () => {
             const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/webm' });
             if (voiceStatusEl) {
-                voiceStatusEl.innerText = "狀態：錄音完成，正在發送音檔至後台...";
+                voiceStatusEl.innerText = '狀態：錄音完成，正在發送音檔至後台...';
             }
             handleVoiceUploadMock(audioBlob);
         };
 
         voiceMediaRecorder.start();
-        
-        if (voiceStatusEl) voiceStatusEl.innerText = "狀態：正在聆聽中，請說話...";
+
+        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：正在聆聽中，請說話...';
         if (voiceButton) {
-            voiceButton.innerText = "停止錄音並解析";
-            voiceButton.style.backgroundColor = "red";
+            voiceButton.innerText = '停止錄音並解析';
+            voiceButton.style.backgroundColor = 'red';
         }
 
     } catch (error) {
-        console.error("麥克風啟動失敗:", error);
-        
-        // 提示使用者去檢查手機系統設定
-        alert("無法啟動麥克風！\n原因：" + error.name + "\n請至手機的「設定」->「應用程式」-> 找到你的 App ->「權限」中，手動將「麥克風」權限開啟。");
+        console.error('麥克風啟動失敗:', error);
+
+        let extra = '';
+        try {
+            if (navigator.permissions && typeof navigator.permissions.query === 'function') {
+                const status = await navigator.permissions.query({ name: 'microphone' });
+                extra = '\n麥克風權限狀態：' + status.state;
+            }
+        } catch (permError) {
+            console.warn('無法查詢 microphone permission status', permError);
+        }
+
+        alert(
+            '無法啟動麥克風！\n原因：' +
+            (error.name || '未知錯誤') +
+            '\n' +
+            (error.message || '') +
+            extra +
+            '\n請確認系統設定中的應用程式權限，並重新啟動 App。'
+        );
     }
 }
 
@@ -297,6 +404,18 @@ function parseIntentAndDispatchMock(text) {
                 parsed_at: new Date().toISOString()
             }
         });
+    }
+}
+
+async function getPermissionState(permissionName) {
+    try {
+        if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
+            return null;
+        }
+        const status = await navigator.permissions.query({ name: permissionName });
+        return status.state;
+    } catch (error) {
+        return null;
     }
 }
 
