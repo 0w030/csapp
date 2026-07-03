@@ -407,6 +407,8 @@ function parseIntentAndDispatchMock(text) {
     }
 }
 
+// Previously attempted Capacitor Permissions.request helper was removed to revert to original flow.
+
 async function getPermissionState(permissionName) {
     try {
         if (!navigator.permissions || typeof navigator.permissions.query !== 'function') {
