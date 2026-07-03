@@ -1,8 +1,4 @@
-﻿// 注意：如果在瀏覽器電腦測試，Capacitor 外掛會無法執行，這是正常的，必須在手機上跑。
-// 這個版本同時支援：
-// 1) Capacitor 原生 BarcodeScanner
-// 2) 瀏覽器環境中的 Web BarcodeDetector（Android/Chrome 支援）
-
+﻿
 const scanButton = document.getElementById('start-scan-btn');
 const scanResultEl = document.getElementById('scan-result');
 const verifyStatusEl = document.getElementById('verify-status');
@@ -169,4 +165,124 @@ function resetStatus() {
     verifyStatusEl.innerText = '等待掃描中...';
     verifyStatusEl.className = 'status-waiting';
     scanModeText.innerText = '目前掃描模式：等待判斷';
+}
+
+// ==========================================
+// 語音辨識/錄音功能擴充 (完全獨立，不影響原本掃描)
+// ==========================================
+
+// 1. 初始化語音 DOM 元素 (請確保 HTML 有對應的 ID)
+const voiceButton = document.getElementById('start-voice-btn');
+const voiceResultEl = document.getElementById('voice-result');
+const voiceStatusEl = document.getElementById('voice-status');
+
+let voiceMediaRecorder = null;
+let voiceAudioChunks = [];
+
+// 2. 綁定語音按鈕點擊事件 (切換錄音狀態)
+if (voiceButton) {
+    voiceButton.addEventListener('click', toggleVoiceRecording);
+}
+
+async function toggleVoiceRecording() {
+    if (!voiceMediaRecorder || voiceMediaRecorder.state === 'inactive') {
+        await startVoiceRecording();
+    } else {
+        stopVoiceRecording();
+    }
+}
+
+// 3. 開始錄音
+async function startVoiceRecording() {
+    voiceAudioChunks = []; // 清空之前的音檔暫存
+    
+    try {
+        // 請求 Android/瀏覽器 的麥克風錄音權限
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        
+        voiceMediaRecorder = new MediaRecorder(stream);
+        
+        voiceMediaRecorder.ondataavailable = (event) => {
+            if (event.data && event.data.size > 0) {
+                voiceAudioChunks.push(event.data);
+            }
+        };
+
+        // 當錄音真正結束時，打包成 Blob 並送往 Mock 後台處理
+        voiceMediaRecorder.onstop = () => {
+            const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/webm' });
+            
+            if (voiceStatusEl) {
+                voiceStatusEl.innerText = "狀態：錄音完成，正在發送音檔至後台...";
+            }
+            
+            // 觸發模擬後台
+            handleVoiceUploadMock(audioBlob);
+        };
+
+        voiceMediaRecorder.start();
+        
+        // 更新 UI 狀態
+        if (voiceStatusEl) voiceStatusEl.innerText = "狀態：正在聆聽中，請說話...";
+        if (voiceButton) {
+            voiceButton.innerText = "停止錄音並解析";
+            voiceButton.style.backgroundColor = "red";
+        }
+
+    } catch (error) {
+        console.error("麥克風啟動失敗:", error);
+        alert("無法啟動麥克風，請檢查 Android 的 RECORD_AUDIO 權限是否開啟。");
+    }
+}
+
+// 4. 停止錄音
+function stopVoiceRecording() {
+    if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+        voiceMediaRecorder.stop();
+        
+        // 關閉軌道釋放麥克風硬體資源
+        voiceMediaRecorder.stream.getTracks().forEach(track => track.stop());
+        
+        // 恢復按鈕 UI
+        if (voiceButton) {
+            voiceButton.innerText = "開始語意輸入";
+            voiceButton.style.backgroundColor = ""; // 恢復 CSS 預設顏色
+        }
+    }
+}
+
+// 5. 模擬商用 API (Google STT / Whisper) 回傳
+function handleVoiceUploadMock(blob) {
+    console.log("【前端音檔錄製成功】大小為：", blob.size, "bytes");
+    
+    // 模擬後端 API 的 1.5 秒網路延遲
+    setTimeout(() => {
+        // 【核心需求 1】保證高準確度文字，先用 mock 資料做介面驗證
+        const mockSpeechToTextResult = "幫我把A05倉庫的感冒藥提出十箱送到診間";
+        
+        if (voiceResultEl) {
+            voiceResultEl.innerText = mockSpeechToTextResult;
+        }
+        if (voiceStatusEl) {
+            voiceStatusEl.innerText = "狀態：語音辨識完成！";
+        }
+        
+        // 進入下一步的意圖拆解（未來會在 FastAPI 透過 LLM 做結構化拆解）
+        parseIntentAndDispatchMock(mockSpeechToTextResult);
+        
+    }, 1500);
+}
+
+// 6. 模擬自然語言意圖拆解與指令執行
+function parseIntentAndDispatchMock(text) {
+    // 這裡先寫一個簡單的文字比對邏輯，方便你在手機上驗證「文字轉指令」的連鎖反應
+    if (text.includes("倉庫") && text.includes("送")) {
+        console.log("【發送結構化指令至後台執行成功】", {
+            intent: "TRANSFER_MATERIAL",
+            parameters: {
+                raw_text: text,
+                parsed_at: new Date().toISOString()
+            }
+        });
+    }
 }

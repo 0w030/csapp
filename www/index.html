@@ -10,6 +10,7 @@
     <div id="app-container" class="container">
         <h1>QR Code 驗證系統</h1>
         
+        <!-- 區塊一：QR Code 掃描功能 -->
         <button id="start-scan-btn">開啟相機掃描</button>
         <p id="scan-mode-text" class="scan-mode-text">目前掃描模式：等待判斷</p>
 
@@ -22,8 +23,21 @@
             <h3>驗證狀態：</h3>
             <p id="verify-status" class="status-waiting">等待掃描中...</p>
         </div>
+
+        <!-- 區塊二：語音指令系統擴充 (新增於此) -->
+        <div class="voice-section" style="margin-top: 30px; border-top: 2px dashed #ccc; padding-top: 20px;">
+            <h2>語音指令系統</h2>
+            <button id="start-voice-btn">開始語意輸入</button>
+            <p id="voice-status" class="scan-mode-text">狀態：點擊按鈕開始</p>
+            
+            <div class="result-box" style="background-color: #f8f9fa;">
+                <h3>語音轉文字結果：</h3>
+                <p id="voice-result" style="color: #007bff; font-weight: bold;">（等待語音輸入...）</p>
+            </div>
+        </div>
     </div>
 
+    <!-- Web 掃描所需的視訊與畫布元素 -->
     <video id="qr-video" hidden muted playsinline></video>
     <canvas id="qr-canvas" hidden></canvas>
 
