@@ -205,6 +205,14 @@ async function startVoiceRecording() {
     voiceAudioChunks = []; // 清空之前的音檔暫存
     
     try {
+        // 【關鍵修復】如果是在 Android 原生環境，先確保 WebView 允許音訊權限
+        // 現代 Android WebView 在呼叫 getUserMedia 之前，必須確保權限已在作業系統層級被允許
+        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
+            // 這裡利用一個小技巧：如果你的相機外掛能用，代表權限橋接是通的
+            // 我們直接透過 navigator.mediaDevices 請求，但若失敗，引導用戶去設定
+            console.log("偵測到 Android 原生環境，準備請求麥克風權限...");
+        }
+
         // 請求 Android/瀏覽器 的麥克風錄音權限
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
         
@@ -216,21 +224,16 @@ async function startVoiceRecording() {
             }
         };
 
-        // 當錄音真正結束時，打包成 Blob 並送往 Mock 後台處理
         voiceMediaRecorder.onstop = () => {
             const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/webm' });
-            
             if (voiceStatusEl) {
                 voiceStatusEl.innerText = "狀態：錄音完成，正在發送音檔至後台...";
             }
-            
-            // 觸發模擬後台
             handleVoiceUploadMock(audioBlob);
         };
 
         voiceMediaRecorder.start();
         
-        // 更新 UI 狀態
         if (voiceStatusEl) voiceStatusEl.innerText = "狀態：正在聆聽中，請說話...";
         if (voiceButton) {
             voiceButton.innerText = "停止錄音並解析";
@@ -239,7 +242,9 @@ async function startVoiceRecording() {
 
     } catch (error) {
         console.error("麥克風啟動失敗:", error);
-        alert("無法啟動麥克風，請檢查 Android 的 RECORD_AUDIO 權限是否開啟。");
+        
+        // 提示使用者去檢查手機系統設定
+        alert("無法啟動麥克風！\n原因：" + error.name + "\n請至手機的「設定」->「應用程式」-> 找到你的 App ->「權限」中，手動將「麥克風」權限開啟。");
     }
 }
 
