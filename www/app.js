@@ -475,28 +475,67 @@ function logScanPackage(qrContent) {
 // ==========================================
 // 臨床語意解析引擎 (Clinical Semantic Parser Class)
 // ==========================================
+
 // ==========================================
-// 核心演算法：字串編輯距離 (Levenshtein Distance)
-// 計算兩個字串的差異程度，數值越小代表越相似
+// 核心演算法工具：萊文斯坦距離與拼音模糊比對
 // ==========================================
-function levenshteinDistance(a, b) {
-    const matrix = [];
-    for (let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
-    for (let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
-    for (let i = 1; i <= b.length; i++) {
-        for (let j = 1; j <= a.length; j++) {
-            if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1, // 替換
-                    matrix[i][j - 1] + 1,     // 插入
-                    matrix[i - 1][j] + 1      // 刪除
-                );
-            }
+
+// 1. 計算兩個字串的相似度百分比 (0.0 ~ 1.0)
+function calculateSimilarity(s1, s2) {
+    if (!s1 || !s2) return 0;
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const matrix = Array(len2 + 1).fill(null).map(() => Array(len1 + 1).fill(null));
+
+    for (let i = 0; i <= len1; i++) matrix[0][i] = i;
+    for (let j = 0; j <= len2; j++) matrix[j][0] = j;
+
+    for (let j = 1; j <= len2; j++) {
+        for (let i = 1; i <= len1; i++) {
+            const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            matrix[j][i] = Math.min(
+                matrix[j][i - 1] + 1, // 刪除
+                matrix[j - 1][i] + 1, // 插入
+                matrix[j - 1][i - 1] + indicator // 替換
+            );
         }
     }
-    return matrix[b.length][a.length];
+    const distance = matrix[len2][len1];
+    const maxLen = Math.max(len1, len2);
+    return (maxLen - distance) / maxLen;
+}
+
+// 2. 拼音滑動窗口模糊比對 (結合 pinyin-pro 降維打擊)
+function fuzzyPinyinIncludes(inputText, keyword, threshold = 0.8) {
+    // A. 效能最佳化：若中文字完全命中，直接回傳 true
+    if (inputText.includes(keyword)) return true;
+
+    // B. 若全域沒有 pinyinPro (無網路或載入失敗)，退回嚴格比對防呆
+    if (typeof pinyinPro === 'undefined') return false;
+
+    // C. 降維處理：將輸入句與關鍵字轉為「無聲調、無空白」的純字母拼音
+    // 範例："胰島素" -> "yidaosu", "一島素" -> "yidaosu"
+    const inputPinyin = pinyinPro.pinyin(inputText, { toneType: 'none', type: 'array' }).join('');
+    const keywordPinyin = pinyinPro.pinyin(keyword, { toneType: 'none', type: 'array' }).join('');
+
+    const windowSize = keywordPinyin.length;
+    if (windowSize < 2) return false;
+
+    // D. 滑動窗口比對：在長句的拼音中，尋找相似度達標的片段
+    for (let i = 0; i <= inputPinyin.length - windowSize; i++) {
+        // 多抓取 1 個字元的緩衝長度，容忍注音/拼音長度差異 (如 xue vs xie)
+        const checkLen = Math.min(windowSize + 1, inputPinyin.length - i);
+        const pinyinSlice = inputPinyin.substring(i, i + checkLen);
+        
+        const similarity = calculateSimilarity(pinyinSlice, keywordPinyin);
+        
+        // 若相似度大於設定閾值 (預設 80%)，即判定命中
+        if (similarity >= threshold) {
+            console.log(`[模糊命中] 原文: "${inputText}"\n擷取拼音: ${pinyinSlice} | 目標: ${keywordPinyin}\n相似度: ${(similarity*100).toFixed(1)}%`);
+            return true;
+        }
+    }
+    return false;
 }
 
 // ==========================================
@@ -508,31 +547,14 @@ class ClinicalSemanticParser {
         this.intentDict = intentDict;
     }
 
-    // 演算法層：在此處插入模糊校正邏輯
     normalize(text) {
         let normalizedText = text.toLowerCase();
-        
-        // 1. 絕對匹配替換 (處理 dictionary.js 裡的同義詞)
+        // 將 dictionary.js 裡的同義詞進行正規化
         for (const [slang, standard] of Object.entries(this.vocabMap)) {
             const regex = new RegExp(slang, "gi");
             normalizedText = normalizedText.replace(regex, standard);
         }
-
-        // 2. 模糊比對校正 (利用 Levenshtein 拯救 STT 聽錯的字)
-        // 這裡放入護理人員最常用的核心關鍵字
-        const coreKeywords = ["血壓", "血氧", "體溫", "翻身", "給藥", "胰島素", "紀錄", "脈搏"];
-        
-        // 將句子切成雙字詞 (Bigram) 來檢查是否有相近的錯字
-        for (let i = 0; i < normalizedText.length - 1; i++) {
-            const term = normalizedText.substring(i, i + 2);
-            for (const kw of coreKeywords) {
-                // 如果長度為 2 的詞，與核心關鍵字距離為 1 (例如：STT 聽成「鞋壓」vs 實際「血壓」)
-                if (levenshteinDistance(term, kw) === 1) {
-                    normalizedText = normalizedText.replace(term, kw);
-                    console.log(`[自動校正] 將「${term}」修正為「${kw}」`);
-                }
-            }
-        }
+        // 💡 移除舊版寫死的雙字元 Levenshtein 校正，將模糊比對轉移到 parse 階段
         return normalizedText;
     }
 
@@ -542,7 +564,13 @@ class ClinicalSemanticParser {
 
         for (const rule of this.intentDict) {
             let score = 0;
-            rule.keywords.forEach(kw => { if (text.includes(kw)) score++; });
+            rule.keywords.forEach(kw => { 
+                // 🚀 核心升級：全面啟動拼音模糊比對機制！
+                // 只要語音輸入中有任何片段的拼音相似度 >= 80%，就視為命中關鍵字
+                if (fuzzyPinyinIncludes(text, kw, 0.8)) {
+                    score++; 
+                }
+            });
 
             if (score >= rule.threshold && score > bestMatch.score) {
                 bestMatch.intent = rule.intent;
@@ -562,7 +590,6 @@ class ClinicalSemanticParser {
         for (const ext of extractors) {
             const match = text.match(ext.regex);
             if (match) {
-                // 抓取正規化群組中有效的值，略過全域匹配的 match[0]
                 let values = match.slice(1).filter(val => val !== undefined);
                 if (values.length > 0) {
                     results.push({
