@@ -472,15 +472,10 @@ function logScanPackage(qrContent) {
     console.log({ qrContent, deviceId: deviceUuid });
 }
 
-// ==========================================
-// 臨床語意解析引擎 (Clinical Semantic Parser Class)
-// ==========================================
 
 // ==========================================
-// 核心演算法工具：萊文斯坦距離與拼音模糊比對
+// 核心演算法工具：萊文斯坦距離與拼音自動校正
 // ==========================================
-
-// 1. 計算兩個字串的相似度百分比 (0.0 ~ 1.0)
 function calculateSimilarity(s1, s2) {
     if (!s1 || !s2) return 0;
     const len1 = s1.length;
@@ -505,39 +500,6 @@ function calculateSimilarity(s1, s2) {
     return (maxLen - distance) / maxLen;
 }
 
-// 2. 拼音滑動窗口模糊比對 (結合 pinyin-pro 降維打擊)
-function fuzzyPinyinIncludes(inputText, keyword, threshold = 0.8) {
-    // A. 效能最佳化：若中文字完全命中，直接回傳 true
-    if (inputText.includes(keyword)) return true;
-
-    // B. 若全域沒有 pinyinPro (無網路或載入失敗)，退回嚴格比對防呆
-    if (typeof pinyinPro === 'undefined') return false;
-
-    // C. 降維處理：將輸入句與關鍵字轉為「無聲調、無空白」的純字母拼音
-    // 範例："胰島素" -> "yidaosu", "一島素" -> "yidaosu"
-    const inputPinyin = pinyinPro.pinyin(inputText, { toneType: 'none', type: 'array' }).join('');
-    const keywordPinyin = pinyinPro.pinyin(keyword, { toneType: 'none', type: 'array' }).join('');
-
-    const windowSize = keywordPinyin.length;
-    if (windowSize < 2) return false;
-
-    // D. 滑動窗口比對：在長句的拼音中，尋找相似度達標的片段
-    for (let i = 0; i <= inputPinyin.length - windowSize; i++) {
-        // 多抓取 1 個字元的緩衝長度，容忍注音/拼音長度差異 (如 xue vs xie)
-        const checkLen = Math.min(windowSize + 1, inputPinyin.length - i);
-        const pinyinSlice = inputPinyin.substring(i, i + checkLen);
-        
-        const similarity = calculateSimilarity(pinyinSlice, keywordPinyin);
-        
-        // 若相似度大於設定閾值 (預設 80%)，即判定命中
-        if (similarity >= threshold) {
-            console.log(`[模糊命中] 原文: "${inputText}"\n擷取拼音: ${pinyinSlice} | 目標: ${keywordPinyin}\n相似度: ${(similarity*100).toFixed(1)}%`);
-            return true;
-        }
-    }
-    return false;
-}
-
 // ==========================================
 // 臨床語意解析引擎 (Clinical Semantic Parser Class)
 // ==========================================
@@ -545,32 +507,81 @@ class ClinicalSemanticParser {
     constructor(vocabMap, intentDict) {
         this.vocabMap = vocabMap;
         this.intentDict = intentDict;
+        
+        // 預先收集所有意圖的關鍵字供拼音校正使用 (長度>=2才進行模糊校正)
+        const allKws = [];
+        intentDict.forEach(rule => allKws.push(...rule.keywords));
+        this.uniqueKeywords = [...new Set(allKws)].filter(kw => kw.length >= 2);
+        
+        // 按長度遞減排序，確保長詞優先被校正 (例如優先校正"血氧飽和度"，再校正"血氧")
+        this.uniqueKeywords.sort((a, b) => b.length - a.length);
+    }
+
+    // 🚀 核心升級：拼音前置校正層 (Fuzzy Pinyin Replacement)
+    fuzzyPinyinReplace(text) {
+        // 防呆：若 pinyinPro 未成功載入，退回原字串
+        if (typeof pinyinPro === 'undefined') return text;
+        
+        let result = text;
+        for (const kw of this.uniqueKeywords) {
+            if (result.includes(kw)) continue; // 已是正確關鍵字，無需校正
+            
+            const kwLen = kw.length;
+            const kwPinyin = pinyinPro.pinyin(kw, { toneType: 'none', type: 'array' }).join('');
+            
+            let i = 0;
+            // 以「中文字數」為單位進行滑動擷取 (例如 "血壓" 是 2 個字，就每次抓 2 個字比對)
+            while (i <= result.length - kwLen) {
+                const slice = result.substring(i, i + kwLen);
+                
+                // 跳過含有英數的片段 (醫療數據、床號不應被拼音校正替換)
+                if (/[a-zA-Z0-9]/.test(slice)) {
+                    i++;
+                    continue;
+                }
+                
+                const slicePinyin = pinyinPro.pinyin(slice, { toneType: 'none', type: 'array' }).join('');
+                const sim = calculateSimilarity(slicePinyin, kwPinyin);
+                
+                // 相似度 >= 75% 觸發校正 (容忍 xieya 和 xueya 之間的一個母音差異)
+                if (sim >= 0.75) {
+                    console.log(`[拼音自動校正] 將錯字 "${slice}" (${slicePinyin}) 修正為 "${kw}" (${kwPinyin}), 相似度: ${(sim*100).toFixed(1)}%`);
+                    
+                    // 在原字串中，把錯字「寫鴨」直接強行替換成「血壓」
+                    result = result.substring(0, i) + kw + result.substring(i + kwLen);
+                    i += kwLen; // 替換後跳過該詞長度，繼續往後檢查
+                } else {
+                    i++;
+                }
+            }
+        }
+        return result;
     }
 
     normalize(text) {
         let normalizedText = text.toLowerCase();
-        // 將 dictionary.js 裡的同義詞進行正規化
+        
+        // 1. 字典同義詞絕對替換 (例如 bp -> 血壓)
         for (const [slang, standard] of Object.entries(this.vocabMap)) {
             const regex = new RegExp(slang, "gi");
             normalizedText = normalizedText.replace(regex, standard);
         }
-        // 💡 移除舊版寫死的雙字元 Levenshtein 校正，將模糊比對轉移到 parse 階段
+        
+        // 2. 拼音模糊校正 (將錯字修正回標準關鍵字)
+        normalizedText = this.fuzzyPinyinReplace(normalizedText);
+        
         return normalizedText;
     }
 
     parse(rawText) {
+        // text 經過 normalize 後，錯字已經被完美修正了！(例如 "寫鴨20/80" -> "血壓20/80")
         const text = this.normalize(rawText);
         let bestMatch = { intent: "UNKNOWN", risk: "LOW", fhirResource: null, score: 0, extractedData: [] };
 
         for (const rule of this.intentDict) {
             let score = 0;
-            rule.keywords.forEach(kw => { 
-                // 🚀 核心升級：全面啟動拼音模糊比對機制！
-                // 只要語音輸入中有任何片段的拼音相似度 >= 80%，就視為命中關鍵字
-                if (fuzzyPinyinIncludes(text, kw, 0.8)) {
-                    score++; 
-                }
-            });
+            // 因為錯字已修復，這裡退回最高效的嚴格文字匹配
+            rule.keywords.forEach(kw => { if (text.includes(kw)) score++; });
 
             if (score >= rule.threshold && score > bestMatch.score) {
                 bestMatch.intent = rule.intent;
@@ -590,6 +601,7 @@ class ClinicalSemanticParser {
         for (const ext of extractors) {
             const match = text.match(ext.regex);
             if (match) {
+                // 抓取正規化群組中有效的值，略過全域匹配的 match[0]
                 let values = match.slice(1).filter(val => val !== undefined);
                 if (values.length > 0) {
                     results.push({
@@ -604,6 +616,7 @@ class ClinicalSemanticParser {
         return results;
     }
 }
+
 
 // ==========================================
 // 語音辨識/錄音功能與狀態管理
