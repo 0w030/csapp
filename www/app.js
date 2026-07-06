@@ -475,17 +475,63 @@ function logScanPackage(qrContent) {
 // ==========================================
 // 臨床語意解析引擎 (Clinical Semantic Parser Class)
 // ==========================================
+// ==========================================
+// 核心演算法：字串編輯距離 (Levenshtein Distance)
+// 計算兩個字串的差異程度，數值越小代表越相似
+// ==========================================
+function levenshteinDistance(a, b) {
+    const matrix = [];
+    for (let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
+    for (let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
+    for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+            if (b.charAt(i - 1) === a.charAt(j - 1)) {
+                matrix[i][j] = matrix[i - 1][j - 1];
+            } else {
+                matrix[i][j] = Math.min(
+                    matrix[i - 1][j - 1] + 1, // 替換
+                    matrix[i][j - 1] + 1,     // 插入
+                    matrix[i - 1][j] + 1      // 刪除
+                );
+            }
+        }
+    }
+    return matrix[b.length][a.length];
+}
+
+// ==========================================
+// 臨床語意解析引擎 (Clinical Semantic Parser Class)
+// ==========================================
 class ClinicalSemanticParser {
     constructor(vocabMap, intentDict) {
         this.vocabMap = vocabMap;
         this.intentDict = intentDict;
     }
 
+    // 演算法層：在此處插入模糊校正邏輯
     normalize(text) {
         let normalizedText = text.toLowerCase();
+        
+        // 1. 絕對匹配替換 (處理 dictionary.js 裡的同義詞)
         for (const [slang, standard] of Object.entries(this.vocabMap)) {
             const regex = new RegExp(slang, "gi");
             normalizedText = normalizedText.replace(regex, standard);
+        }
+
+        // 2. 模糊比對校正 (利用 Levenshtein 拯救 STT 聽錯的字)
+        // 這裡放入護理人員最常用的核心關鍵字
+        const coreKeywords = ["血壓", "血氧", "體溫", "翻身", "給藥", "胰島素", "紀錄", "脈搏"];
+        
+        // 將句子切成雙字詞 (Bigram) 來檢查是否有相近的錯字
+        for (let i = 0; i < normalizedText.length - 1; i++) {
+            const term = normalizedText.substring(i, i + 2);
+            for (const kw of coreKeywords) {
+                // 如果長度為 2 的詞，與核心關鍵字距離為 1 (例如：STT 聽成「鞋壓」vs 實際「血壓」)
+                if (levenshteinDistance(term, kw) === 1) {
+                    normalizedText = normalizedText.replace(term, kw);
+                    console.log(`[自動校正] 將「${term}」修正為「${kw}」`);
+                }
+            }
         }
         return normalizedText;
     }
