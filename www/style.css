@@ -75,6 +75,27 @@ button {
     font-weight: 700;
 }
 
+.voice-audio-box {
+    margin-top: 16px;
+    background-color: #f8fafc;
+}
+
+.voice-audio-box audio {
+    width: 100%;
+    margin-bottom: 8px;
+}
+
+.voice-audio-box p {
+    margin: 6px 0 10px;
+    color: #475569;
+    font-size: 0.95rem;
+}
+
+.voice-audio-box button {
+    padding: 8px 14px;
+    font-size: 14px;
+}
+
 /* 關鍵：當相機開啟時，Capacitor 會在外層加上一個 class，我們要把背景變透明 */
 body.barcode-scanner-active {
     background-color: transparent !important;

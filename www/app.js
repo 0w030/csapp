@@ -58,6 +58,11 @@ function isNativeCapacitor() {
     return !!window.Capacitor && window.Capacitor.platform !== 'web';
 }
 
+function isScanCancellationError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('canceled') || message.includes('cancelled') || message.includes('cancel');
+}
+
 async function isWebBarcodeScannerSupported() {
     if (!('BarcodeDetector' in window)) {
         return false;
@@ -139,6 +144,13 @@ async function startNativeScan(BarcodeScanner) {
         restoreUi();
         console.error('startNativeScan failed:', error);
 
+        if (isScanCancellationError(error)) {
+            console.info('掃描已取消。');
+            verifyStatusEl.innerText = '掃描已取消';
+            verifyStatusEl.className = 'status-waiting';
+            return;
+        }
+
         if (typeof BarcodeScanner.scan === 'function') {
             console.warn('嘗試使用內建掃描備援模式...');
             await startNativeScanBuiltIn(BarcodeScanner, error);
@@ -170,9 +182,15 @@ async function startNativeScanBuiltIn(BarcodeScanner, originalError) {
         }
     } catch (fallbackError) {
         console.error('startNativeScanBuiltIn failed:', fallbackError, 'originalError=', originalError);
-        alert('原生掃描啟動失敗：' + (fallbackError?.message || fallbackError));
-        verifyStatusEl.innerText = '掃描錯誤';
-        verifyStatusEl.className = 'status-error';
+        if (isScanCancellationError(fallbackError)) {
+            console.info('內建掃描已取消。');
+            verifyStatusEl.innerText = '掃描已取消';
+            verifyStatusEl.className = 'status-waiting';
+        } else {
+            alert('原生掃描啟動失敗：' + (fallbackError?.message || fallbackError));
+            verifyStatusEl.innerText = '掃描錯誤';
+            verifyStatusEl.className = 'status-error';
+        }
     } finally {
         restoreUi();
     }
@@ -265,8 +283,117 @@ const voiceButton = document.getElementById('start-voice-btn');
 const voiceResultEl = document.getElementById('voice-result');
 const voiceStatusEl = document.getElementById('voice-status');
 
+let voiceAudioPreviewEl = document.getElementById('voice-audio-preview');
+let voiceAudioMetaEl = document.getElementById('voice-audio-meta');
+let voiceDownloadBtn = document.getElementById('voice-download-btn');
+
 let voiceMediaRecorder = null;
 let voiceAudioChunks = [];
+let latestVoiceAudioBlob = null;
+let latestVoiceAudioUrl = null;
+let voiceRecognition = null;
+let voiceRecognitionFinalText = '';
+let voiceRecognitionIsActive = false;
+
+function ensureVoicePreviewElements() {
+    if (voiceAudioPreviewEl && voiceAudioMetaEl && voiceDownloadBtn) {
+        return;
+    }
+
+    const voiceSection = document.querySelector('.voice-section');
+    if (!voiceSection) {
+        return;
+    }
+
+    const previewContainer = document.createElement('div');
+    previewContainer.className = 'voice-audio-box result-box';
+    previewContainer.innerHTML = `
+        <h3>錄音預覽</h3>
+        <audio id="voice-audio-preview" controls hidden></audio>
+        <p id="voice-audio-meta">（尚未錄音...）</p>
+        <button id="voice-download-btn" type="button" hidden>下載錄音</button>
+    `;
+    voiceSection.appendChild(previewContainer);
+
+    voiceAudioPreviewEl = document.getElementById('voice-audio-preview');
+    voiceAudioMetaEl = document.getElementById('voice-audio-meta');
+    voiceDownloadBtn = document.getElementById('voice-download-btn');
+}
+
+ensureVoicePreviewElements();
+
+function initVoiceRecognition() {
+    if (voiceRecognition) {
+        return voiceRecognition;
+    }
+
+    const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognitionCtor) {
+        console.warn('此瀏覽器不支援 SpeechRecognition API。');
+        return null;
+    }
+
+    voiceRecognition = new SpeechRecognitionCtor();
+    voiceRecognition.lang = 'zh-TW';
+    voiceRecognition.continuous = false;
+    voiceRecognition.interimResults = true;
+    voiceRecognition.maxAlternatives = 1;
+
+    voiceRecognition.onresult = (event) => {
+        let interimText = '';
+        let finalText = '';
+
+        for (let index = event.resultIndex; index < event.results.length; index += 1) {
+            const transcript = event.results[index][0].transcript.trim();
+            if (event.results[index].isFinal) {
+                finalText += (finalText ? ' ' : '') + transcript;
+            } else {
+                interimText += (interimText ? ' ' : '') + transcript;
+            }
+        }
+
+        voiceRecognitionFinalText = finalText || interimText;
+
+        if (voiceResultEl) {
+            voiceResultEl.innerText = voiceRecognitionFinalText;
+        }
+
+        if (voiceStatusEl) {
+            voiceStatusEl.innerText = finalText
+                ? '狀態：辨識完成。'
+                : '狀態：正在辨識中...';
+        }
+    };
+
+    voiceRecognition.onerror = (event) => {
+        console.error('SpeechRecognition 錯誤：', event.error);
+        if (voiceStatusEl) {
+            voiceStatusEl.innerText = '狀態：辨識失敗，請再試一次。';
+        }
+    };
+
+    voiceRecognition.onend = () => {
+        voiceRecognitionIsActive = false;
+    };
+
+    return voiceRecognition;
+}
+
+function finalizeVoiceRecognition(audioBlob) {
+    const transcript = (voiceRecognitionFinalText || '').trim();
+
+    if (voiceResultEl) {
+        voiceResultEl.innerText = transcript || '未辨識到文字。';
+    }
+
+    if (voiceStatusEl) {
+        voiceStatusEl.innerText = transcript
+            ? '狀態：語音辨識完成。'
+            : '狀態：未辨識到文字，請再試一次。';
+    }
+
+    console.log('語音辨識結果：', transcript, '音檔大小：', audioBlob?.size);
+}
 
 // 2. 綁定語音按鈕點擊事件 (切換錄音狀態)
 if (voiceButton) {
@@ -284,6 +411,9 @@ async function toggleVoiceRecording() {
 // 3. 開始錄音
 async function startVoiceRecording() {
     voiceAudioChunks = []; // 清空之前的音檔暫存
+    voiceRecognitionFinalText = '';
+    ensureVoicePreviewElements();
+    clearVoicePreview();
 
     try {
         if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
@@ -317,15 +447,33 @@ async function startVoiceRecording() {
 
         voiceMediaRecorder.onstop = () => {
             const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/webm' });
+            latestVoiceAudioBlob = audioBlob;
+            showVoicePreview(audioBlob);
             if (voiceStatusEl) {
-                voiceStatusEl.innerText = '狀態：錄音完成，正在發送音檔至後台...';
+                voiceStatusEl.innerText = '狀態：錄音完成，正在進行語音辨識...';
             }
-            handleVoiceUploadMock(audioBlob);
+
+            if (voiceRecognition && voiceRecognitionIsActive) {
+                voiceRecognition.stop();
+            }
+
+            window.setTimeout(() => finalizeVoiceRecognition(audioBlob), 800);
         };
 
         voiceMediaRecorder.start();
 
-        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：正在聆聽中，請說話...';
+        const recognition = initVoiceRecognition();
+        if (recognition) {
+            voiceRecognitionFinalText = '';
+            voiceRecognitionIsActive = true;
+            recognition.start();
+        } else if (voiceStatusEl) {
+            voiceStatusEl.innerText = '狀態：正在聆聽中，請說話...（此瀏覽器不支援即時辨識）';
+        }
+
+        if (voiceStatusEl && !voiceRecognitionIsActive) {
+            voiceStatusEl.innerText = '狀態：正在聆聽中，請說話...';
+        }
         if (voiceButton) {
             voiceButton.innerText = '停止錄音並解析';
             voiceButton.style.backgroundColor = 'red';
@@ -358,6 +506,11 @@ async function startVoiceRecording() {
 // 4. 停止錄音
 function stopVoiceRecording() {
     if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
+        if (voiceRecognition && voiceRecognitionIsActive) {
+            voiceRecognition.stop();
+            voiceRecognitionIsActive = false;
+        }
+
         voiceMediaRecorder.stop();
         
         // 關閉軌道釋放麥克風硬體資源
@@ -371,41 +524,99 @@ function stopVoiceRecording() {
     }
 }
 
-// 5. 模擬商用 API (Google STT / Whisper) 回傳
-function handleVoiceUploadMock(blob) {
-    console.log("【前端音檔錄製成功】大小為：", blob.size, "bytes");
-    
-    // 模擬後端 API 的 1.5 秒網路延遲
-    setTimeout(() => {
-        // 【核心需求 1】保證高準確度文字，先用 mock 資料做介面驗證
-        const mockSpeechToTextResult = "幫我把A05倉庫的感冒藥提出十箱送到診間";
-        
-        if (voiceResultEl) {
-            voiceResultEl.innerText = mockSpeechToTextResult;
-        }
-        if (voiceStatusEl) {
-            voiceStatusEl.innerText = "狀態：語音辨識完成！";
-        }
-        
-        // 進入下一步的意圖拆解（未來會在 FastAPI 透過 LLM 做結構化拆解）
-        parseIntentAndDispatchMock(mockSpeechToTextResult);
-        
-    }, 1500);
-}
-
-// 6. 模擬自然語言意圖拆解與指令執行
-function parseIntentAndDispatchMock(text) {
-    // 這裡先寫一個簡單的文字比對邏輯，方便你在手機上驗證「文字轉指令」的連鎖反應
-    if (text.includes("倉庫") && text.includes("送")) {
-        console.log("【發送結構化指令至後台執行成功】", {
-            intent: "TRANSFER_MATERIAL",
-            parameters: {
-                raw_text: text,
-                parsed_at: new Date().toISOString()
-            }
-        });
+function clearVoicePreview() {
+    if (voiceAudioPreviewEl) {
+        voiceAudioPreviewEl.pause();
+        voiceAudioPreviewEl.removeAttribute('src');
+        voiceAudioPreviewEl.load();
+        voiceAudioPreviewEl.hidden = true;
+        voiceAudioPreviewEl.style.display = 'none';
+    }
+    if (voiceAudioMetaEl) {
+        voiceAudioMetaEl.innerText = '（尚未錄音...）';
+    }
+    if (voiceDownloadBtn) {
+        voiceDownloadBtn.hidden = true;
+    }
+    if (latestVoiceAudioUrl) {
+        URL.revokeObjectURL(latestVoiceAudioUrl);
+        latestVoiceAudioUrl = null;
     }
 }
+
+function showVoicePreview(blob) {
+    ensureVoicePreviewElements();
+
+    if (latestVoiceAudioUrl) {
+        URL.revokeObjectURL(latestVoiceAudioUrl);
+    }
+
+    latestVoiceAudioUrl = URL.createObjectURL(blob);
+    latestVoiceAudioBlob = blob;
+
+    if (voiceAudioPreviewEl) {
+        voiceAudioPreviewEl.src = latestVoiceAudioUrl;
+        voiceAudioPreviewEl.hidden = false;
+        voiceAudioPreviewEl.style.display = 'block';
+        voiceAudioPreviewEl.load();
+    }
+
+    if (voiceAudioMetaEl) {
+        const sizeKb = (blob.size / 1024).toFixed(1);
+        voiceAudioMetaEl.innerText = `錄音已建立，可播放。大小：${sizeKb} KB，格式：${blob.type || 'unknown'}`;
+    }
+
+    if (voiceDownloadBtn) {
+        voiceDownloadBtn.hidden = false;
+        voiceDownloadBtn.style.display = 'inline-block';
+        voiceDownloadBtn.onclick = () => {
+            const downloadUrl = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = downloadUrl;
+            link.download = `voice-recording-${Date.now()}.webm`;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+        };
+    }
+}
+
+// 5. 模擬商用 API (Google STT / Whisper) 回傳
+// function handleVoiceUploadMock(blob) {
+//     console.log("【前端音檔錄製成功】大小為：", blob.size, "bytes");
+//     
+//     // 模擬後端 API 的 1.5 秒網路延遲
+//     setTimeout(() => {
+//         // 【核心需求 1】保證高準確度文字，先用 mock 資料做介面驗證
+//         const mockSpeechToTextResult = "幫我把A05倉庫的感冒藥提出十箱送到診間";
+//         
+//         if (voiceResultEl) {
+//             voiceResultEl.innerText = mockSpeechToTextResult;
+//         }
+//         if (voiceStatusEl) {
+//             voiceStatusEl.innerText = "狀態：語音辨識完成！";
+//         }
+//         
+//         // 進入下一步的意圖拆解（未來會在 FastAPI 透過 LLM 做結構化拆解）
+//         parseIntentAndDispatchMock(mockSpeechToTextResult);
+//         
+//     }, 1500);
+// }
+
+// 6. 模擬自然語言意圖拆解與指令執行
+// function parseIntentAndDispatchMock(text) {
+//     // 這裡先寫一個簡單的文字比對邏輯，方便你在手機上驗證「文字轉指令」的連鎖反應
+//     if (text.includes("倉庫") && text.includes("送")) {
+//         console.log("【發送結構化指令至後台執行成功】", {
+//             intent: "TRANSFER_MATERIAL",
+//             parameters: {
+//                 raw_text: text,
+//                 parsed_at: new Date().toISOString()
+//             }
+//         });
+//     }
+// }
 
 // Previously attempted Capacitor Permissions.request helper was removed to revert to original flow.
 
