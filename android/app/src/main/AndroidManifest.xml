@@ -40,12 +40,14 @@
     </application>
 
     <!-- Permissions -->
+
+    <!-- 允許 App 查詢並綁定系統的語音辨識服務 (Android 11+) -->
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
     </queries>
-
+    
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />

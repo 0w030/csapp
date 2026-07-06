@@ -58,6 +58,11 @@ function isNativeCapacitor() {
     return !!window.Capacitor && window.Capacitor.platform !== 'web';
 }
 
+function isScanCancellationError(error) {
+    const message = String(error?.message || error || '').toLowerCase();
+    return message.includes('canceled') || message.includes('cancelled') || message.includes('cancel');
+}
+
 async function isWebBarcodeScannerSupported() {
     if (!('BarcodeDetector' in window)) {
         return false;
@@ -139,6 +144,13 @@ async function startNativeScan(BarcodeScanner) {
         restoreUi();
         console.error('startNativeScan failed:', error);
 
+        if (isScanCancellationError(error)) {
+            console.info('掃描已取消。');
+            verifyStatusEl.innerText = '掃描已取消';
+            verifyStatusEl.className = 'status-waiting';
+            return;
+        }
+
         if (typeof BarcodeScanner.scan === 'function') {
             console.warn('嘗試使用內建掃描備援模式...');
             await startNativeScanBuiltIn(BarcodeScanner, error);
@@ -170,9 +182,15 @@ async function startNativeScanBuiltIn(BarcodeScanner, originalError) {
         }
     } catch (fallbackError) {
         console.error('startNativeScanBuiltIn failed:', fallbackError, 'originalError=', originalError);
-        alert('原生掃描啟動失敗：' + (fallbackError?.message || fallbackError));
-        verifyStatusEl.innerText = '掃描錯誤';
-        verifyStatusEl.className = 'status-error';
+        if (isScanCancellationError(fallbackError)) {
+            console.info('內建掃描已取消。');
+            verifyStatusEl.innerText = '掃描已取消';
+            verifyStatusEl.className = 'status-waiting';
+        } else {
+            alert('原生掃描啟動失敗：' + (fallbackError?.message || fallbackError));
+            verifyStatusEl.innerText = '掃描錯誤';
+            verifyStatusEl.className = 'status-error';
+        }
     } finally {
         restoreUi();
     }
