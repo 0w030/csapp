@@ -8,41 +8,46 @@
 </head>
 <body>
     <div id="app-container" class="container">
-        <h1>QR Code 驗證系統</h1>
-        
-        <!-- 區塊一：QR Code 掃描功能 -->
-        <button id="start-scan-btn">開啟相機掃描</button>
-        <p id="scan-mode-text" class="scan-mode-text">目前掃描模式：等待判斷</p>
+        <h1>AI護理手記</h1>
 
-        <div class="device-info-box">
-            <h3>裝置資訊</h3>
-            <p class="device-info-label">Device UUID：</p>
-            <pre id="device-uuid">載入中...</pre>
-        </div>
+        <section id="scan-page">
+            <!-- 區塊一：QR Code 掃描功能 -->
+            <button id="start-scan-btn">開啟相機掃描</button>
+            <p id="scan-mode-text" class="scan-mode-text">目前掃描模式：等待判斷</p>
 
-        <div class="result-box">
-            <h3>掃描結果：</h3>
-            <p id="scan-result">尚未掃描</p>
-        </div>
-
-        <div class="status-box">
-            <h3>驗證狀態：</h3>
-            <p id="verify-status" class="status-waiting">等待掃描中...</p>
-        </div>
-
-        <!-- 區塊二：語音指令系統擴充 (新增於此) -->
-        <div class="voice-section">
-            <h2>語音指令系統</h2>
-            <button id="start-voice-btn">開始語意輸入</button>
-            <p id="voice-status" class="scan-mode-text">狀態：點擊按鈕開始</p>
-            
-            <div class="voice-result-box result-box">
-                <h3>語音轉文字結果：</h3>
-                <textarea id="voice-result" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; margin-bottom: 10px;">等待語音輸入...</textarea>
-                
-                <button id="analyze-text-btn" style="background-color: #28a745; width: 100%; color: white; padding: 12px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer;">確認文字無誤並分析</button>
+            <div class="device-info-box">
+                <h3>裝置資訊</h3>
+                <p class="device-info-label">Device UUID：</p>
+                <pre id="device-uuid">載入中...</pre>
             </div>
-        </div>
+
+            <div class="result-box">
+                <h3>掃描結果：</h3>
+                <p id="scan-result">尚未掃描</p>
+            </div>
+
+            <div class="status-box">
+                <h3>驗證狀態：</h3>
+                <p id="verify-status" class="status-waiting">等待掃描中...</p>
+            </div>
+        </section>
+
+        <section id="voice-page" class="hidden">
+            <!-- 區塊二：語音指令系統擴充 -->
+            <div class="voice-section">
+                <h2>語音指令系統</h2>
+                <p class="scan-mode-text">已掃描 QR Code，請開始語音輸入</p>
+                <button id="start-voice-btn">開始語意輸入</button>
+                <p id="voice-status" class="scan-mode-text">狀態：點擊按鈕開始</p>
+                
+                <div class="voice-result-box result-box">
+                    <h3>語音轉文字結果：</h3>
+                    <textarea id="voice-result" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; margin-bottom: 10px;">等待語音輸入...</textarea>
+                    
+                    <button id="analyze-text-btn" style="background-color: #28a745; width: 100%; color: white; padding: 12px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer;">確認文字無誤並分析</button>
+                </div>
+            </div>
+        </section>
     </div>
 
     <!-- Web 掃描所需的視訊與畫布元素 -->

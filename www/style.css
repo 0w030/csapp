@@ -96,6 +96,10 @@ button {
     font-size: 14px;
 }
 
+.hidden {
+    display: none !important;
+}
+
 /* 關鍵：當相機開啟時，Capacitor 會在外層加上一個 class，我們要把背景變透明 */
 body.barcode-scanner-active {
     background-color: transparent !important;

@@ -5,18 +5,44 @@ const verifyStatusEl = document.getElementById('verify-status');
 const scanModeText = document.getElementById('scan-mode-text');
 const deviceUuidEl = document.getElementById('device-uuid');
 const appContainer = document.getElementById('app-container');
+const scanPage = document.getElementById('scan-page');
+const voicePage = document.getElementById('voice-page');
 const videoElement = document.getElementById('qr-video');
 const canvasElement = document.getElementById('qr-canvas');
+const voiceButton = document.getElementById('start-voice-btn');
+const voiceResultEl = document.getElementById('voice-result');
+const voiceStatusEl = document.getElementById('voice-status');
+const analyzeTextBtn = document.getElementById('analyze-text-btn');
 
 let scanStream = null;
 let scanInterval = null;
 let webBarcodeDetector = null;
 let deviceUuid = null;
+let voiceMediaRecorder = null;
+let voiceAudioChunks = [];
 
 scanButton.addEventListener('click', startScan);
+if (analyzeTextBtn) {
+    analyzeTextBtn.addEventListener('click', () => {
+        const currentText = voiceResultEl?.value?.trim();
+        if (!currentText) {
+            alert('請先輸入或辨識出文字內容後再進行分析。');
+            return;
+        }
+
+        if (voiceStatusEl) {
+            voiceStatusEl.innerText = '狀態：正在分析文字...';
+        }
+        parseIntentLocally(currentText);
+        if (voiceStatusEl) {
+            voiceStatusEl.innerText = '狀態：分析完成，請查看 console 日誌';
+        }
+    });
+}
 
 deviceUuid = getOrCreateDeviceUuid();
 updateDeviceUuidDisplay();
+showScanPage();
 
 async function startScan() {
     resetStatus();
@@ -132,7 +158,7 @@ async function startNativeScan(BarcodeScanner) {
             } catch (stopError) {
                 console.warn('停止原生掃描失敗：', stopError);
             }
-            restoreUi();
+            enterVoicePage();
         });
 
         await BarcodeScanner.startScan();
@@ -224,6 +250,7 @@ async function startWebScan() {
                     verifyStatusEl.innerText = '掃描完成';
                     verifyStatusEl.className = 'status-success';
                     logScanPackage(content);
+                    enterVoicePage();
                 }
             } catch (error) {
                 console.error('Web 掃描偵測錯誤：', error);
@@ -272,163 +299,26 @@ function resetStatus() {
     verifyStatusEl.innerText = '等待掃描中...';
     verifyStatusEl.className = 'status-waiting';
     scanModeText.innerText = '目前掃描模式：等待判斷';
+    showScanPage();
 }
 
-// // ==========================================
-// // 語音辨識/錄音功能擴充 (純文字本地辨識版)
-// // ==========================================
+function showScanPage() {
+    scanPage?.classList.remove('hidden');
+    voicePage?.classList.add('hidden');
+}
 
-// const voiceButton = document.getElementById('start-voice-btn');
-// const voiceResultEl = document.getElementById('voice-result');
-// const voiceStatusEl = document.getElementById('voice-status');
+function showVoicePage() {
+    scanPage?.classList.add('hidden');
+    voicePage?.classList.remove('hidden');
+}
 
-// // 2. 綁定語音按鈕點擊事件 (切換錄音狀態)
-// if (voiceButton) {
-//     voiceButton.addEventListener('click', toggleVoiceRecording);
-// }
-
-// async function toggleVoiceRecording() {
-//     // 透過按鈕當前的文字來判斷要啟動還是停止
-//     if (voiceButton.innerText.includes('停止')) {
-//         await stopVoiceRecording();
-//     } else {
-//         await startVoiceRecording();
-//     }
-// }
-
-// // 3. 開始錄音 (呼叫本地語音轉文字)
-// async function startVoiceRecording() {
-//     try {
-//         const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
-        
-//         if (!SpeechRecognition) {
-//             alert('找不到 SpeechRecognition 外掛，請確認已安裝並執行 npx cap sync。');
-//             return;
-//         }
-
-//         // 檢查設備支援度
-//         const { available } = await SpeechRecognition.available();
-//         if (!available) {
-//             alert('此設備不支援原生的語音辨識服務。');
-//             return;
-//         }
-
-//         // 請求權限
-//         let perm = await SpeechRecognition.checkPermissions();
-//         if (perm.speechRecognition !== 'granted') {
-//             perm = await SpeechRecognition.requestPermissions();
-//         }
-        
-//         if (perm.speechRecognition !== 'granted') {
-//             alert('必須允許語音辨識權限才能使用此功能！');
-//             return;
-//         }
-
-//         // 更新 UI 為錄音中狀態
-//         if (voiceStatusEl) voiceStatusEl.innerText = '狀態：正在聆聽，請說出指令...';
-//         if (voiceButton) {
-//             voiceButton.innerText = '停止聆聽並分析';
-//             voiceButton.style.backgroundColor = '#dc3545';
-//         }
-
-// // 監聽即時辨識結果 (加上 data?.matches 保護)
-//         SpeechRecognition.addListener('partialResults', (data) => {
-//             if (data?.matches && data.matches.length > 0 && voiceResultEl) {
-//                 voiceResultEl.innerText = data.matches[0];
-//             }
-//         });
-
-//         // 啟動辨識
-//         const result = await SpeechRecognition.start({
-//             language: "zh-TW",
-//             maxResults: 1,
-//             prompt: "請說出指令",
-//             partialResults: true,
-//             popup: true   // ⚠️ 強烈建議先設為 true，確保系統沒擋背景錄音
-//         });
-
-//         // 辨識成功，獲取最終文字 (加上 result?.matches 保護)
-//         if (result?.matches && result.matches.length > 0) {
-//             const finalTranscript = result.matches[0];
-//             handleVoiceTextSuccess(finalTranscript);
-//         }
-
-//      } catch (error) {
-//         console.error('語音辨識發生錯誤:', error);
-//         // 加上這行，把真實錯誤印在手機畫面上
-//         alert('語音錯誤詳情：' + (error.message || JSON.stringify(error))); 
-        
-//         if (voiceStatusEl) voiceStatusEl.innerText = '狀態：辨識中斷或發生錯誤';
-//         restoreVoiceButtonUi();
-//     }
-// }
-
-// // 4. 停止錄音
-// async function stopVoiceRecording() {
-//     try {
-//         const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
-//         if (SpeechRecognition) {
-//             await SpeechRecognition.stop();
-//         }
-//     } catch (error) {
-//         console.warn('停止辨識時發生錯誤:', error);
-//     } finally {
-//         restoreVoiceButtonUi();
-//     }
-// }
-
-// // 恢復按鈕預設狀態的共用函式
-// function restoreVoiceButtonUi() {
-//     if (voiceButton) {
-//         voiceButton.innerText = "開始語意輸入";
-//         voiceButton.style.backgroundColor = ""; 
-//     }
-// }
-
-// // 5. 處理最終純文字結果
-// function handleVoiceTextSuccess(text) {
-//     restoreVoiceButtonUi();
-    
-//     if (voiceResultEl) voiceResultEl.innerText = text;
-//     if (voiceStatusEl) voiceStatusEl.innerText = '狀態：語音辨識完成！';
-    
-//     console.log("【前端取得純文字】準備進行本地語意分析:", text);
-    
-//     // 直接在前端進行意圖拆解
-//     parseIntentLocally(text);
-// }
-
-// // 6. 前端本地自然語言意圖拆解
-// function parseIntentLocally(text) {
-//     let intent = "UNKNOWN";
-//     let parameters = {};
-
-//     // 利用簡單的關鍵字進行本地分析，未來可擴充為更複雜的正則或邏輯
-//     if (text.includes("倉庫") && (text.includes("送") || text.includes("提"))) {
-//         intent = "TRANSFER_MATERIAL";
-        
-//         // 嘗試提取數量 (簡易示範)
-//         const amountMatch = text.match(/(一|二|三|四|五|六|七|八|九|十|\d+)[箱|個|盒]/);
-//         if (amountMatch) {
-//             parameters.amount = amountMatch[0];
-//         }
-//     } else if (text.includes("病歷") || text.includes("摘要")) {
-//         intent = "FETCH_SUMMARY";
-//     }
-
-//     console.log("【前端意圖分析結果】", {
-//         intent: intent,
-//         extracted_text: text,
-//         parameters: parameters,
-//         parsed_at: new Date().toISOString()
-//     });
-
-//     if (intent !== "UNKNOWN") {
-//         alert(`已識別指令：${intent}\n準備執行對應前端邏輯！`);
-//     } else {
-//         alert('無法識別指令意圖，請換個說法試試。');
-//     }
-// }
+function enterVoicePage() {
+    restoreUi();
+    showVoicePage();
+    if (voiceStatusEl) {
+        voiceStatusEl.innerText = '狀態：已掃描 QR Code，可開始語音輸入';
+    }
+}
 
 // // Previously attempted Capacitor Permissions.request helper was removed to revert to original flow.
 
@@ -576,25 +466,6 @@ class ClinicalSemanticParser {
         }
         return results;
     }
-}
-
-// ==========================================
-// 語音辨識/錄音功能與狀態管理
-// ==========================================
-const voiceButton = document.getElementById('start-voice-btn');
-const voiceResultEl = document.getElementById('voice-result');
-const voiceStatusEl = document.getElementById('voice-status');
-const analyzeTextBtn = document.getElementById('analyze-text-btn');
-
-if (analyzeTextBtn) {
-    analyzeTextBtn.addEventListener('click', () => {
-        const currentText = voiceResultEl.value; 
-        if (currentText && !currentText.includes("等待語音輸入")) {
-            parseIntentLocally(currentText);
-        } else {
-            alert("請先輸入或錄製指令內容！");
-        }
-    });
 }
 
 const clinicalParser = new ClinicalSemanticParser(ClinicalVocabularyMap, ClinicalIntentDictionary);
