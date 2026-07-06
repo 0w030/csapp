@@ -362,31 +362,32 @@ function logScanPackage(qrContent) {
     console.log({ qrContent, deviceId: deviceUuid });
 }
 
+
 // ==========================================
-// 臨床語意解析引擎 (Clinical Semantic Parser Class)
+// 核心演算法工具：萊文斯坦距離與拼音自動校正
 // ==========================================
-// ==========================================
-// 核心演算法：字串編輯距離 (Levenshtein Distance)
-// 計算兩個字串的差異程度，數值越小代表越相似
-// ==========================================
-function levenshteinDistance(a, b) {
-    const matrix = [];
-    for (let i = 0; i <= b.length; i++) { matrix[i] = [i]; }
-    for (let j = 0; j <= a.length; j++) { matrix[0][j] = j; }
-    for (let i = 1; i <= b.length; i++) {
-        for (let j = 1; j <= a.length; j++) {
-            if (b.charAt(i - 1) === a.charAt(j - 1)) {
-                matrix[i][j] = matrix[i - 1][j - 1];
-            } else {
-                matrix[i][j] = Math.min(
-                    matrix[i - 1][j - 1] + 1, // 替換
-                    matrix[i][j - 1] + 1,     // 插入
-                    matrix[i - 1][j] + 1      // 刪除
-                );
-            }
+function calculateSimilarity(s1, s2) {
+    if (!s1 || !s2) return 0;
+    const len1 = s1.length;
+    const len2 = s2.length;
+    const matrix = Array(len2 + 1).fill(null).map(() => Array(len1 + 1).fill(null));
+
+    for (let i = 0; i <= len1; i++) matrix[0][i] = i;
+    for (let j = 0; j <= len2; j++) matrix[j][0] = j;
+
+    for (let j = 1; j <= len2; j++) {
+        for (let i = 1; i <= len1; i++) {
+            const indicator = s1[i - 1] === s2[j - 1] ? 0 : 1;
+            matrix[j][i] = Math.min(
+                matrix[j][i - 1] + 1, // 刪除
+                matrix[j - 1][i] + 1, // 插入
+                matrix[j - 1][i - 1] + indicator // 替換
+            );
         }
     }
-    return matrix[b.length][a.length];
+    const distance = matrix[len2][len1];
+    const maxLen = Math.max(len1, len2);
+    return (maxLen - distance) / maxLen;
 }
 
 // ==========================================
@@ -396,42 +397,80 @@ class ClinicalSemanticParser {
     constructor(vocabMap, intentDict) {
         this.vocabMap = vocabMap;
         this.intentDict = intentDict;
+        
+        // 預先收集所有意圖的關鍵字供拼音校正使用 (長度>=2才進行模糊校正)
+        const allKws = [];
+        intentDict.forEach(rule => allKws.push(...rule.keywords));
+        this.uniqueKeywords = [...new Set(allKws)].filter(kw => kw.length >= 2);
+        
+        // 按長度遞減排序，確保長詞優先被校正 (例如優先校正"血氧飽和度"，再校正"血氧")
+        this.uniqueKeywords.sort((a, b) => b.length - a.length);
     }
 
-    // 演算法層：在此處插入模糊校正邏輯
+    // 🚀 核心升級：拼音前置校正層 (Fuzzy Pinyin Replacement)
+    fuzzyPinyinReplace(text) {
+        // 防呆：若 pinyinPro 未成功載入，退回原字串
+        if (typeof pinyinPro === 'undefined') return text;
+        
+        let result = text;
+        for (const kw of this.uniqueKeywords) {
+            if (result.includes(kw)) continue; // 已是正確關鍵字，無需校正
+            
+            const kwLen = kw.length;
+            const kwPinyin = pinyinPro.pinyin(kw, { toneType: 'none', type: 'array' }).join('');
+            
+            let i = 0;
+            // 以「中文字數」為單位進行滑動擷取 (例如 "血壓" 是 2 個字，就每次抓 2 個字比對)
+            while (i <= result.length - kwLen) {
+                const slice = result.substring(i, i + kwLen);
+                
+                // 跳過含有英數的片段 (醫療數據、床號不應被拼音校正替換)
+                if (/[a-zA-Z0-9]/.test(slice)) {
+                    i++;
+                    continue;
+                }
+                
+                const slicePinyin = pinyinPro.pinyin(slice, { toneType: 'none', type: 'array' }).join('');
+                const sim = calculateSimilarity(slicePinyin, kwPinyin);
+                
+                // 相似度 >= 75% 觸發校正 (容忍 xieya 和 xueya 之間的一個母音差異)
+                if (sim >= 0.75) {
+                    console.log(`[拼音自動校正] 將錯字 "${slice}" (${slicePinyin}) 修正為 "${kw}" (${kwPinyin}), 相似度: ${(sim*100).toFixed(1)}%`);
+                    
+                    // 在原字串中，把錯字「寫鴨」直接強行替換成「血壓」
+                    result = result.substring(0, i) + kw + result.substring(i + kwLen);
+                    i += kwLen; // 替換後跳過該詞長度，繼續往後檢查
+                } else {
+                    i++;
+                }
+            }
+        }
+        return result;
+    }
+
     normalize(text) {
         let normalizedText = text.toLowerCase();
         
-        // 1. 絕對匹配替換 (處理 dictionary.js 裡的同義詞)
+        // 1. 字典同義詞絕對替換 (例如 bp -> 血壓)
         for (const [slang, standard] of Object.entries(this.vocabMap)) {
             const regex = new RegExp(slang, "gi");
             normalizedText = normalizedText.replace(regex, standard);
         }
-
-        // 2. 模糊比對校正 (利用 Levenshtein 拯救 STT 聽錯的字)
-        // 這裡放入護理人員最常用的核心關鍵字
-        const coreKeywords = ["血壓", "血氧", "體溫", "翻身", "給藥", "胰島素", "紀錄", "脈搏"];
         
-        // 將句子切成雙字詞 (Bigram) 來檢查是否有相近的錯字
-        for (let i = 0; i < normalizedText.length - 1; i++) {
-            const term = normalizedText.substring(i, i + 2);
-            for (const kw of coreKeywords) {
-                // 如果長度為 2 的詞，與核心關鍵字距離為 1 (例如：STT 聽成「鞋壓」vs 實際「血壓」)
-                if (levenshteinDistance(term, kw) === 1) {
-                    normalizedText = normalizedText.replace(term, kw);
-                    console.log(`[自動校正] 將「${term}」修正為「${kw}」`);
-                }
-            }
-        }
+        // 2. 拼音模糊校正 (將錯字修正回標準關鍵字)
+        normalizedText = this.fuzzyPinyinReplace(normalizedText);
+        
         return normalizedText;
     }
 
     parse(rawText) {
+        // text 經過 normalize 後，錯字已經被完美修正了！(例如 "寫鴨20/80" -> "血壓20/80")
         const text = this.normalize(rawText);
         let bestMatch = { intent: "UNKNOWN", risk: "LOW", fhirResource: null, score: 0, extractedData: [] };
 
         for (const rule of this.intentDict) {
             let score = 0;
+            // 因為錯字已修復，這裡退回最高效的嚴格文字匹配
             rule.keywords.forEach(kw => { if (text.includes(kw)) score++; });
 
             if (score >= rule.threshold && score > bestMatch.score) {
@@ -466,6 +505,25 @@ class ClinicalSemanticParser {
         }
         return results;
     }
+}
+
+// ==========================================
+// 語音辨識/錄音功能與狀態管理
+// ==========================================
+const voiceButton = document.getElementById('start-voice-btn');
+const voiceResultEl = document.getElementById('voice-result');
+const voiceStatusEl = document.getElementById('voice-status');
+const analyzeTextBtn = document.getElementById('analyze-text-btn');
+
+if (analyzeTextBtn) {
+    analyzeTextBtn.addEventListener('click', () => {
+        const currentText = voiceResultEl.value; 
+        if (currentText && !currentText.includes("等待語音輸入")) {
+            parseIntentLocally(currentText);
+        } else {
+            alert("請先輸入或錄製指令內容！");
+        }
+    });
 }
 
 const clinicalParser = new ClinicalSemanticParser(ClinicalVocabularyMap, ClinicalIntentDictionary);
