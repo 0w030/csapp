@@ -516,14 +516,16 @@ class ClinicalSemanticParser {
         for (const ext of extractors) {
             const match = text.match(ext.regex);
             if (match) {
-                // 取得匹配的數值部分 (排除第 0 組完整匹配與第 1 組標籤名稱)
-                let values = match.slice(2).filter(val => val !== undefined);
-                results.push({
-                    entity: ext.entity,
-                    value: values.length > 1 ? values.join('/') : values[0],
-                    codeSystem: ext.codeSystem,
-                    code: ext.code
-                });
+                // 抓取正規化群組中有效的值，略過全域匹配的 match[0]
+                let values = match.slice(1).filter(val => val !== undefined);
+                if (values.length > 0) {
+                    results.push({
+                        entity: ext.entity,
+                        value: values.length > 1 ? values.join(ext.joinChar !== undefined ? ext.joinChar : '') : values[0],
+                        codeSystem: ext.codeSystem,
+                        code: ext.code
+                    });
+                }
             }
         }
         return results;
@@ -534,13 +536,12 @@ class ClinicalSemanticParser {
 // 語音辨識/錄音功能與狀態管理
 // ==========================================
 const voiceButton = document.getElementById('start-voice-btn');
-const voiceResultEl = document.getElementById('voice-result'); // 現在這是一個 textarea
+const voiceResultEl = document.getElementById('voice-result');
 const voiceStatusEl = document.getElementById('voice-status');
 const analyzeTextBtn = document.getElementById('analyze-text-btn');
 
 if (analyzeTextBtn) {
     analyzeTextBtn.addEventListener('click', () => {
-        // 取得使用者修改後的最終文字
         const currentText = voiceResultEl.value; 
         if (currentText && !currentText.includes("等待語音輸入")) {
             parseIntentLocally(currentText);
@@ -550,13 +551,10 @@ if (analyzeTextBtn) {
     });
 }
 
-console.log("語音按鈕狀態：", voiceButton);
-
-// 實例化解析器 (依賴 dictionary.js)
 const clinicalParser = new ClinicalSemanticParser(ClinicalVocabularyMap, ClinicalIntentDictionary);
 
-// 全域狀態：高風險指令的多輪確認機制
-let pendingHighRiskAction = null;
+// 全域狀態：指令的多輪確認機制
+let pendingAction = null;
 let confirmationTimeout = null;
 
 if (voiceButton) {
@@ -564,9 +562,6 @@ if (voiceButton) {
 }
 
 async function toggleVoiceRecording() {
-    // 💡 加入這行來測試！如果點了沒跳視窗，代表按鈕根本沒綁定成功
-    alert("按鈕有被點擊到！進入 toggleVoiceRecording"); 
-    
     if (voiceButton.innerText.includes('停止')) {
         await stopVoiceRecording();
     } else {
@@ -579,7 +574,6 @@ async function startVoiceRecording() {
         const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
         if (!SpeechRecognition) {
             alert('本地開發環境無 Capacitor 語音外掛，為您模擬輸入測試。');
-            // 開發環境下，直接用 Prompt 模擬語音輸入
             const mockInput = prompt("請輸入模擬語音測試（如：幫4床打 Insulin 4單位）：");
             if(mockInput) handleVoiceTextSuccess(mockInput);
             return;
@@ -600,7 +594,6 @@ async function startVoiceRecording() {
 
         SpeechRecognition.addListener('partialResults', (data) => {
             if (data?.matches && data.matches.length > 0 && voiceResultEl) {
-                // textarea 必須使用 .value 來寫入文字
                 voiceResultEl.value = data.matches[0]; 
             }
         });
@@ -634,42 +627,33 @@ function restoreVoiceButtonUi() {
     }
 }
 
-// 處理語音轉文字的結果
 function handleVoiceTextSuccess(text) {
     restoreVoiceButtonUi();
-    
-    // textarea 必須使用 .value 來寫入文字
     if (voiceResultEl) voiceResultEl.value = text; 
     
-    // 判斷目前的狀態，決定是否自動送出分析
-    if (pendingHighRiskAction) {
-        // 情況 A：目前正在等待高風險確認 (只需回答確認或取消)，直接自動送出分析
+    if (pendingAction) {
         parseIntentLocally(text);
     } else {
-        // 情況 B：一般輸入新指令，停下來讓護理人員有機會手動編輯錯字
         if (voiceStatusEl) {
             voiceStatusEl.innerText = '狀態：辨識完成。請確認文字，必要時可手動修改，再點擊下方「確認文字無誤並分析」';
         }
-        console.log("【暫停分析】等待使用者手動確認文字內容：", text);
     }
 }
 
 // 核心流程：本地解析與風險多輪確認
 function parseIntentLocally(text) {
-    // 1. 若處於等待覆議狀態，視為「確認/取消」的回覆
-    if (pendingHighRiskAction) {
+    if (pendingAction) {
         handleConfirmationState(text);
         return;
     }
 
-    // 2. 正常指令解析
     const result = clinicalParser.parse(text);
     console.log("【醫療語意分析結果】", result);
 
     if (result.intent !== "UNKNOWN") {
         processIntentByRiskLevel(result);
     } else {
-        alert('無法識別指令意圖，請換個說法試試。');
+        alert('無法識別指令意圖，請重試。');
         resetVoiceState();
     }
 }
@@ -678,56 +662,96 @@ function processIntentByRiskLevel(result) {
     const bed = result.extractedData.find(d => d.entity === 'bed_number')?.value || '未知';
 
     if (result.risk === "HIGH") {
-        const drug = result.extractedData.find(d => d.entity === 'drug_name')?.value;
-        const dose = result.extractedData.find(d => d.entity === 'dose')?.value;
+        const drug = result.extractedData.find(d => d.entity === 'drug_name')?.value || '未知藥物';
+        const dose = result.extractedData.find(d => d.entity === 'dose')?.value || '';
         const confirmMsg = `請確認：${bed}床病人，藥品 ${drug} ${dose}，是否確認給藥？`;
         
-        pendingHighRiskAction = result;
+        pendingAction = { ...result, type: 'HIGH' };
         speakTTS(confirmMsg); 
         if(voiceStatusEl) voiceStatusEl.innerText = `⚠️ 覆誦中：${confirmMsg} (請說確認或取消)`;
         
+        // 高風險：10秒未回應作廢
         confirmationTimeout = setTimeout(() => {
-            if (pendingHighRiskAction) {
-                alert("⏳ 10秒內未回應，高風險指令作廢。");
+            if (pendingAction && pendingAction.type === 'HIGH') {
+                alert("⏳ 10秒內未明確回應，高風險指令作廢，請手動輸入。");
                 resetVoiceState();
             }
         }, 10000);
 
     } else if (result.risk === "MEDIUM") {
-        speakTTS(`${bed}床，動作已記錄。`);
-        alert(`[中風險] 記錄完成 (3秒復原期)\n意圖：${result.intent}`);
-        resetVoiceState();
+        const msg = `${bed}床動作已記錄，3秒無異議將自動寫入。`;
+        speakTTS(msg);
+        
+        pendingAction = { ...result, type: 'MEDIUM' };
+        if(voiceStatusEl) voiceStatusEl.innerText = `⏳ 待確認：${msg} (可說「是/對」立即寫入)`;
+        
+        // 中風險：3秒預設接受機制
+        confirmationTimeout = setTimeout(() => {
+            if (pendingAction && pendingAction.type === 'MEDIUM') {
+                commitAction(pendingAction, "預設接受 (3秒逾時)");
+            }
+        }, 3000);
         
     } else {
-        alert(`[低風險] 直接寫入暫存結果\n意圖：${result.intent}\n擷取參數：${JSON.stringify(result.extractedData)}`);
-        resetVoiceState();
+        commitAction(result, "無需確認 (低風險)");
     }
 }
 
 function handleConfirmationState(text) {
     clearTimeout(confirmationTimeout);
 
-    if (text.includes("確認") || text.includes("對") || text.includes("是")) {
-        alert(`給藥已確認！\n寫入 FHIR 資源：${pendingHighRiskAction.fhirResource}\n參數：${JSON.stringify(pendingHighRiskAction.extractedData)}`);
-    } else if (text.includes("取消") || text.includes("不")) {
-        alert("指令已取消。");
-    } else {
-        alert("聽不懂您的回覆，請明確說出『確認』或『取消』。");
-        // 重置倒數計時，繼續等待
-        confirmationTimeout = setTimeout(() => { resetVoiceState(); }, 10000);
-        return; 
+    if (pendingAction.type === 'HIGH') {
+        if (text.includes("確認") || text.includes("對") || text.includes("是")) {
+            commitAction(pendingAction, "口頭確認");
+        } else if (text.includes("取消") || text.includes("不")) {
+            alert("指令已取消。");
+            resetVoiceState();
+        } else {
+            alert("聽不懂您的回覆，請明確說出『確認』或『取消』。");
+            confirmationTimeout = setTimeout(() => { 
+                if (pendingAction) {
+                    alert("⏳ 10秒內未明確回應，高風險指令作廢。");
+                    resetVoiceState();
+                }
+            }, 10000);
+        }
+    } else if (pendingAction.type === 'MEDIUM') {
+        if (text.includes("確認") || text.includes("對") || text.includes("是")) {
+            commitAction(pendingAction, "口頭確認");
+        } else if (text.includes("取消") || text.includes("不")) {
+            alert("指令已取消。");
+            resetVoiceState();
+        } else {
+            // 中風險遇到無關語音時，預設自動存入上筆結果，並將當前語音視為新指令處理
+            commitAction(pendingAction, "預設接受 (收到新指令)");
+            parseIntentLocally(text);
+        }
     }
+}
+
+function commitAction(action, methodStr) {
+    alert(`✅ 寫入系統 [${action.risk}風險 - ${methodStr}]\nFHIR 資源：${action.fhirResource}\n意圖：${action.intent}\n參數：${JSON.stringify(action.extractedData)}`);
+    
+    console.log("【紀錄留痕】", {
+        timestamp: new Date().toISOString(),
+        intent: action.intent,
+        risk: action.risk,
+        method: methodStr,
+        extracted: action.extractedData
+    });
     resetVoiceState();
 }
 
 function resetVoiceState() {
-    pendingHighRiskAction = null;
+    pendingAction = null;
+    clearTimeout(confirmationTimeout);
     if (voiceStatusEl) voiceStatusEl.innerText = '狀態：語音辨識完成！點擊按鈕再次開始';
 }
 
 function speakTTS(message) {
-    // 使用瀏覽器 Web Speech API 播報語音
-    const utterance = new SpeechSynthesisUtterance(message);
-    utterance.lang = 'zh-TW';
-    window.speechSynthesis.speak(utterance);
+    if ('speechSynthesis' in window) {
+        const utterance = new SpeechSynthesisUtterance(message);
+        utterance.lang = 'zh-TW';
+        window.speechSynthesis.speak(utterance);
+    }
 }
