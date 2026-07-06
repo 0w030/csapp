@@ -503,9 +503,6 @@ function calculateSimilarity(s1, s2) {
 // ==========================================
 // 臨床語意解析引擎 (Clinical Semantic Parser Class)
 // ==========================================
-// ==========================================
-// 臨床語意解析引擎 (Clinical Semantic Parser Class)
-// ==========================================
 class ClinicalSemanticParser {
     constructor(vocabMap, intentDict) {
         this.vocabMap = vocabMap;
@@ -633,24 +630,40 @@ class ClinicalSemanticParser {
     }
 
     parse(rawText) {
-        // text 經過 normalize 後，錯字和中文數字已經被完美修正了！(例如 "三床寫鴨一百二十" -> "3床血壓120")
         const text = this.normalize(rawText);
-        let bestMatch = { intent: "UNKNOWN", risk: "LOW", fhirResource: null, score: 0, extractedData: [] };
+        // 💡 改用陣列來儲存所有匹配成功的意圖
+        let matchedIntents = [];
 
         for (const rule of this.intentDict) {
             let score = 0;
-            // 因為錯字已修復，這裡退回最高效的嚴格文字匹配
-            rule.keywords.forEach(kw => { if (text.includes(kw)) score++; });
+            rule.keywords.forEach(kw => { 
+                if (fuzzyPinyinIncludes(text, kw, 0.8)) {
+                    score++; 
+                }
+            });
 
-            if (score >= rule.threshold && score > bestMatch.score) {
-                bestMatch.intent = rule.intent;
-                bestMatch.risk = rule.risk;
-                bestMatch.fhirResource = rule.fhirResource;
-                bestMatch.score = score;
-                bestMatch.extractedData = this.extractEntities(text, rule.extractors);
+            // 只要大於該意圖的門檻值，就收錄進來 (不再只留最高分)
+            if (score >= rule.threshold) {
+                matchedIntents.push({
+                    intent: rule.intent,
+                    risk: rule.risk,
+                    fhirResource: rule.fhirResource,
+                    score: score,
+                    extractedData: this.extractEntities(text, rule.extractors)
+                });
             }
         }
-        return bestMatch;
+
+        // 如果什麼都沒比對到，回傳 UNKNOWN
+        if (matchedIntents.length === 0) {
+            return [{ intent: "UNKNOWN", risk: "LOW", fhirResource: null, score: 0, extractedData: [] }];
+        }
+
+        // 💡 關鍵排序：依據風險等級排序，確保高風險 (HIGH) 的意圖排在最前面，優先讓護理人員確認
+        const riskWeight = { "HIGH": 3, "MEDIUM": 2, "LOW": 1 };
+        matchedIntents.sort((a, b) => riskWeight[b.risk] - riskWeight[a.risk]);
+
+        return matchedIntents; // 回傳的是一個陣列！
     }
 
     extractEntities(text, extractors) {
