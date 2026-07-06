@@ -407,6 +407,61 @@ class ClinicalSemanticParser {
         this.uniqueKeywords.sort((a, b) => b.length - a.length);
     }
 
+    // 🚀 核心新增：中文數字轉阿拉伯數字攔截器 (支援小數點與數量級)
+    convertChineseNumbers(text) {
+        const cnNums = { '零': 0, '一': 1, '二': 2, '兩': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
+        const cnUnits = { '十': 10, '百': 100, '千': 1000, '萬': 10000 };
+        // 匹配所有連續的中文數字、單位與「點」
+        const regex = /[零一二兩三四五六七八九十百千萬點]+/g;
+
+        const parseIntegerPart = (matchStr) => {
+            if (!matchStr) return '';
+            let hasUnit = false;
+            for (let char of matchStr) {
+                if (cnUnits[char]) { hasUnit = true; break; }
+            }
+
+            // 狀況 A：處理純序列號 (例如護理人員唸："一二三床" -> "123")
+            if (!hasUnit) {
+                let res = '';
+                for (let char of matchStr) {
+                    res += cnNums[char] !== undefined ? cnNums[char] : '';
+                }
+                return res || matchStr;
+            }
+
+            // 狀況 B：處理帶單位的標準數值 (例如："一百二十" -> "120")
+            let total = 0;
+            let current = 0;
+            for (let i = 0; i < matchStr.length; i++) {
+                let char = matchStr[i];
+                if (cnNums[char] !== undefined) {
+                    current = cnNums[char];
+                    if (i === matchStr.length - 1) total += current;
+                } else if (cnUnits[char] !== undefined) {
+                    let unit = cnUnits[char];
+                    // 處理 "十" 開頭的省略說法 (例如："十五" 系統會辨識成十開頭，需補 1)
+                    if (current === 0 && unit === 10) current = 1;
+                    total += current * unit;
+                    current = 0; // 進位後重置
+                }
+            }
+            return total.toString();
+        };
+
+        return text.replace(regex, (match) => {
+            // 處理小數點 (例如："三十七點五" -> "37.5")
+            if (match.includes('點')) {
+                const parts = match.split('點');
+                const intPart = parseIntegerPart(parts[0]) || '0';
+                // 小數點後通常是純序列號讀法 (如：五、一二)
+                const decPart = parts[1].split('').map(c => cnNums[c] !== undefined ? cnNums[c] : '').join('');
+                return `${intPart}.${decPart}`;
+            }
+            return parseIntegerPart(match);
+        });
+    }
+
     // 🚀 核心升級：拼音前置校正層 (Fuzzy Pinyin Replacement)
     fuzzyPinyinReplace(text) {
         // 防呆：若 pinyinPro 未成功載入，退回原字串
@@ -425,7 +480,7 @@ class ClinicalSemanticParser {
                 const slice = result.substring(i, i + kwLen);
                 
                 // 跳過含有英數的片段 (醫療數據、床號不應被拼音校正替換)
-                if (/[a-zA-Z0-9]/.test(slice)) {
+                if (/[a-zA-Z0-9\.]/.test(slice)) {
                     i++;
                     continue;
                 }
@@ -449,7 +504,8 @@ class ClinicalSemanticParser {
     }
 
     normalize(text) {
-        let normalizedText = text.toLowerCase();
+        // 0. 第一步：先將所有的中文數字轉為阿拉伯數字 (例如：三十七點五 -> 37.5)
+        let normalizedText = this.convertChineseNumbers(text).toLowerCase();
         
         // 1. 字典同義詞絕對替換 (例如 bp -> 血壓)
         for (const [slang, standard] of Object.entries(this.vocabMap)) {
@@ -464,24 +520,40 @@ class ClinicalSemanticParser {
     }
 
     parse(rawText) {
-        // text 經過 normalize 後，錯字已經被完美修正了！(例如 "寫鴨20/80" -> "血壓20/80")
         const text = this.normalize(rawText);
-        let bestMatch = { intent: "UNKNOWN", risk: "LOW", fhirResource: null, score: 0, extractedData: [] };
+        // 💡 改用陣列來儲存所有匹配成功的意圖
+        let matchedIntents = [];
 
         for (const rule of this.intentDict) {
             let score = 0;
-            // 因為錯字已修復，這裡退回最高效的嚴格文字匹配
-            rule.keywords.forEach(kw => { if (text.includes(kw)) score++; });
+            rule.keywords.forEach(kw => { 
+                if (fuzzyPinyinIncludes(text, kw, 0.8)) {
+                    score++; 
+                }
+            });
 
-            if (score >= rule.threshold && score > bestMatch.score) {
-                bestMatch.intent = rule.intent;
-                bestMatch.risk = rule.risk;
-                bestMatch.fhirResource = rule.fhirResource;
-                bestMatch.score = score;
-                bestMatch.extractedData = this.extractEntities(text, rule.extractors);
+            // 只要大於該意圖的門檻值，就收錄進來 (不再只留最高分)
+            if (score >= rule.threshold) {
+                matchedIntents.push({
+                    intent: rule.intent,
+                    risk: rule.risk,
+                    fhirResource: rule.fhirResource,
+                    score: score,
+                    extractedData: this.extractEntities(text, rule.extractors)
+                });
             }
         }
-        return bestMatch;
+
+        // 如果什麼都沒比對到，回傳 UNKNOWN
+        if (matchedIntents.length === 0) {
+            return [{ intent: "UNKNOWN", risk: "LOW", fhirResource: null, score: 0, extractedData: [] }];
+        }
+
+        // 💡 關鍵排序：依據風險等級排序，確保高風險 (HIGH) 的意圖排在最前面，優先讓護理人員確認
+        const riskWeight = { "HIGH": 3, "MEDIUM": 2, "LOW": 1 };
+        matchedIntents.sort((a, b) => riskWeight[b.risk] - riskWeight[a.risk]);
+
+        return matchedIntents; // 回傳的是一個陣列！
     }
 
     extractEntities(text, extractors) {
