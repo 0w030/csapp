@@ -1,19 +1,26 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
+
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>CSApp QR Scanner</title>
     <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
     <div id="app-container" class="container">
-        <h1>AI護理手記</h1>
+        <div class="app-header">
+            <h1>AI護理手記</h1>
+            <p class="subtitle">智慧掃描與語音紀錄，讓護理工作更安心</p>
+        </div>
 
-        <section id="scan-page">
+        <section id="scan-page" class="card">
             <!-- 區塊一：QR Code 掃描功能 -->
             <button id="start-scan-btn">開啟相機掃描</button>
+            <p class="section-tag">QR 掃描模式</p>
             <p id="scan-mode-text" class="scan-mode-text">目前掃描模式：等待判斷</p>
+            <p class="action-note">請將 QR Code 對準畫面中央，自動辨識後進入語音輸入頁面。</p>
 
             <div class="device-info-box">
                 <h3>裝置資訊</h3>
@@ -32,19 +39,22 @@
             </div>
         </section>
 
-        <section id="voice-page" class="hidden">
+        <section id="voice-page" class="hidden card">
             <!-- 區塊二：語音指令系統擴充 -->
             <div class="voice-section">
                 <h2>語音指令系統</h2>
                 <p class="scan-mode-text">已掃描 QR Code，請開始語音輸入</p>
                 <button id="start-voice-btn">開始語意輸入</button>
                 <p id="voice-status" class="scan-mode-text">狀態：點擊按鈕開始</p>
-                
+                <p class="action-note">按下「開始語意輸入」，說出護理紀錄內容並確認文字後分析。</p>
+
                 <div class="voice-result-box result-box">
                     <h3>語音轉文字結果：</h3>
-                    <textarea id="voice-result" rows="3" style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; margin-bottom: 10px;">等待語音輸入...</textarea>
-                    
-                    <button id="analyze-text-btn" style="background-color: #28a745; width: 100%; color: white; padding: 12px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer;">確認文字無誤並分析</button>
+                    <textarea id="voice-result" rows="3"
+                        style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; font-size: 16px; margin-bottom: 10px;">等待語音輸入...</textarea>
+
+                    <button id="analyze-text-btn"
+                        style="background-color: #28a745; width: 100%; color: white; padding: 12px; border: none; border-radius: 4px; font-size: 16px; cursor: pointer;">確認文字無誤並分析</button>
                 </div>
             </div>
         </section>
@@ -60,4 +70,5 @@
     <script src="dictionary.js"></script>
     <script src="app.js"></script>
 </body>
+
 </html>

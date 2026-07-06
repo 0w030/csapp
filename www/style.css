@@ -1,113 +1,444 @@
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 20px;
-    display: block;
-    text-align: center;
-    background-color: #fafafa;
+/* Modern Medical AI Dashboard - CSS Style Guide */
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=Outfit:wght@300;400;500;600;700&display=swap');
+
+:root {
+    --bg-gradient: radial-gradient(circle at top, #0f172a 0%, #020617 100%);
+    --surface: rgba(15, 23, 42, 0.78);
+    --surface-strong: rgba(15, 23, 42, 0.92);
+    --card-bg: rgba(15, 23, 42, 0.72);
+    --card-border: rgba(255, 255, 255, 0.09);
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-muted: #7c93b0;
+
+    --primary: #38bdf8;
+    --primary-hover: #22c4ff;
+    --primary-glow: rgba(56, 189, 248, 0.25);
+
+    --success: #34d399;
+    --success-hover: #22c55e;
+    --success-glow: rgba(52, 211, 153, 0.25);
+
+    --danger: #f87171;
+    --danger-hover: #ef4444;
+    --danger-glow: rgba(248, 113, 113, 0.25);
+
+    --warning: #fbbf24;
+    --warning-glow: rgba(251, 191, 36, 0.22);
 }
 
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    font-family: 'Outfit', 'Noto Sans TC', sans-serif;
+    background: var(--bg-gradient);
+    color: var(--text-primary);
+    min-height: 100vh;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 24px;
+    overflow-x: hidden;
+    position: relative;
+}
+
+body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: radial-gradient(circle at top center, rgba(56, 189, 248, 0.12), transparent 30%),
+                radial-gradient(circle at bottom right, rgba(16, 185, 129, 0.1), transparent 18%);
+    pointer-events: none;
+}
+
+/* Capacitor Scanner Transparency Rule */
+body.barcode-scanner-active {
+    background: transparent !important;
+}
+
+body.barcode-scanner-active #app-container {
+    display: none !important;
+}
+
+/* Main Container styling */
 .container {
-    max-width: 500px;
-    margin: 0 auto;
+    width: 100%;
+    max-width: 560px;
+    background: rgba(15, 23, 42, 0.82);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-radius: 32px;
+    padding: 32px 28px;
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35),
+                0 0 90px rgba(56, 189, 248, 0.08);
+    animation: fadeIn 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Header and Branding */
+.app-header {
+    text-align: center;
+    margin-bottom: 20px;
+}
+
+h1 {
+    font-size: 2rem;
+    font-weight: 800;
+    margin-bottom: 10px;
+    background: linear-gradient(135deg, #38bdf8 0%, #22c55e 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.5px;
+}
+
+.subtitle {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    margin: 0 auto 24px;
+    max-width: 360px;
+    line-height: 1.6;
+}
+
+.section-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 999px;
+    background: rgba(56, 189, 248, 0.12);
+    color: var(--primary);
+    font-size: 0.82rem;
+    letter-spacing: 0.04em;
+    margin: 18px 0 10px;
+}
+
+.action-note {
+    font-size: 0.9rem;
+    color: var(--text-secondary);
+    margin-top: 12px;
+    line-height: 1.6;
+}
+
+/* Section transitions */
+section {
+    opacity: 1;
+    transition: opacity 0.4s ease, transform 0.4s ease;
+}
+
+section.hidden {
+    display: none !important;
+    opacity: 0;
+    transform: translateY(20px);
+}
+
+/* Cards / Boxes */
+.card, .result-box, .status-box, .device-info-box, .voice-result-box {
+    background: rgba(15, 23, 42, 0.85);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 22px;
+    padding: 22px 24px;
+    margin-bottom: 20px;
+    text-align: left;
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+}
+
+.card:hover, .result-box:hover, .status-box:hover, .device-info-box:hover {
+    border-color: rgba(56, 189, 248, 0.22);
+    transform: translateY(-3px);
+    box-shadow: 0 22px 45px rgba(0, 0, 0, 0.2);
+}
+
+#scan-page.card, #voice-page.card {
+    padding: 22px 24px;
 }
 
 button {
-    padding: 12px 24px;
-    font-size: 16px;
-    background-color: #007bff;
-    color: white;
-    border: none;
-    border-radius: 4px;
+    width: 100%;
+    padding: 16px 24px;
+    font-size: 1rem;
+    font-weight: 700;
+    border-radius: 16px;
+    border: 1px solid transparent;
     cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease;
+    font-family: inherit;
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(0, 0, 0, 0.16);
+    background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
 }
 
-.result-box, .status-box, .device-info-box {
-    margin-top: 20px;
-    padding: 10px;
-    border: 1px solid #ddd;
-    border-radius: 4px;
-    background: white;
+button:hover {
+    transform: translateY(-1px);
 }
 
-/* 狀態顏色 */
-.status-waiting { color: #666; }
-.status-success { color: green; font-weight: bold; }
-.status-fail, .status-error { color: red; font-weight: bold; }
+#start-scan-btn {
+    background: linear-gradient(135deg, #38bdf8 0%, #0ea5e9 100%);
+    border-color: rgba(56, 189, 248, 0.25);
+}
 
+#start-scan-btn:hover {
+    background: linear-gradient(135deg, #22c55e 0%, #0ea5e9 100%);
+    box-shadow: 0 18px 35px rgba(56, 189, 248, 0.18);
+}
+
+#start-voice-btn {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);
+    margin-bottom: 12px;
+    border-color: rgba(14, 165, 233, 0.25);
+}
+
+#start-voice-btn:hover {
+    background: linear-gradient(135deg, #22c55e 0%, #0ea5e9 100%);
+    box-shadow: 0 18px 35px rgba(56, 189, 248, 0.2);
+}
+
+#start-voice-btn.recording {
+    background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;
+    animation: pulseGlow 1.5s infinite;
+    border-color: rgba(239, 68, 68, 0.25) !important;
+}
+
+#analyze-text-btn {
+    background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+    border-color: rgba(16, 185, 129, 0.25);
+}
+
+#analyze-text-btn:hover {
+    background: linear-gradient(135deg, #059669 0%, #065f46 100%);
+    box-shadow: 0 0 22px rgba(16, 185, 129, 0.25);
+}
+
+/* Card titles */
+.card h3, .result-box h3, .status-box h3, .device-info-box h3, .voice-section h2 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-bottom: 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.voice-section h2 {
+    font-size: 1.4rem;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+}
+
+/* Button styles */
+button {
+    width: 100%;
+    padding: 16px 24px;
+    font-size: 1rem;
+    font-weight: 600;
+    border-radius: 14px;
+    border: none;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: inherit;
+    color: #fff;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+/* Specific buttons styling */
+#start-scan-btn {
+    background: linear-gradient(135deg, #0ea5e9 0%, #2563eb 100%);
+}
+
+#start-scan-btn:hover {
+    background: linear-gradient(135deg, #0284c7 0%, #1d4ed8 100%);
+    box-shadow: 0 0 20px var(--primary-glow);
+    transform: translateY(-1px);
+}
+
+#start-voice-btn {
+    background: linear-gradient(135deg, #0ea5e9 0%, #0369a1 100%);
+    margin-bottom: 12px;
+}
+
+#start-voice-btn:hover {
+    background: linear-gradient(135deg, #0284c7 0%, #075985 100%);
+    box-shadow: 0 0 20px var(--primary-glow);
+    transform: translateY(-1px);
+}
+
+#start-voice-btn.recording {
+    background: linear-gradient(135deg, #ef4444 0%, #b91c1c 100%) !important;
+    animation: pulseGlow 1.5s infinite;
+}
+
+#analyze-text-btn {
+    background: linear-gradient(135deg, #10b981 0%, #047857 100%);
+}
+
+#analyze-text-btn:hover {
+    background: linear-gradient(135deg, #059669 0%, #065f46 100%);
+    box-shadow: 0 0 20px var(--success-glow);
+    transform: translateY(-1px);
+}
+
+button:active {
+    transform: translateY(1px);
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+}
+
+button:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Status texts and modes */
+.scan-mode-text {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    margin: 12px 0 24px;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 6px 12px;
+    border-radius: 8px;
+    display: inline-block;
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.status-waiting, .status-success, .status-fail, .status-error {
+    font-size: 1.1rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* Status themes */
+.status-waiting {
+    color: var(--text-secondary);
+}
+
+.status-waiting::before {
+    content: '';
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    background-color: var(--text-secondary);
+    border-radius: 50%;
+    animation: blink 1.2s infinite;
+}
+
+.status-success {
+    color: var(--success);
+    font-weight: 600;
+}
+
+.status-success::before {
+    content: '✓';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background: rgba(16, 185, 129, 0.15);
+    border-radius: 50%;
+    font-size: 0.8rem;
+}
+
+.status-fail, .status-error {
+    color: var(--danger);
+    font-weight: 600;
+}
+
+.status-fail::before, .status-error::before {
+    content: '✕';
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    background: rgba(239, 68, 68, 0.15);
+    border-radius: 50%;
+    font-size: 0.8rem;
+}
+
+/* Device Info Formatting */
 .device-info-box pre {
     margin: 0;
-    padding: 12px;
-    font-family: 'Courier New', Courier, monospace;
-    font-size: 0.92rem;
-    color: #333;
-    background-color: #f7f7f7;
-    border: 1px solid #e0e0e0;
-    border-radius: 4px;
+    padding: 10px;
+    font-family: 'Fira Code', 'Courier New', Courier, monospace;
+    font-size: 0.8rem;
+    color: #38bdf8;
+    background-color: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 10px;
     white-space: pre-wrap;
     word-break: break-all;
 }
 
 .device-info-label {
-    margin: 0 0 6px;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+}
+
+#scan-result {
+    font-family: 'Fira Code', 'Courier New', Courier, monospace;
     font-size: 0.95rem;
-    color: #555;
+    color: #e2e8f0;
+    word-break: break-all;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 8px 12px;
+    border-radius: 8px;
+    border-left: 3px solid var(--primary);
 }
 
-.voice-section {
-    margin-top: 30px;
-    border-top: 2px dashed #ccc;
-    padding-top: 20px;
-    text-align: left;
-}
-
-.voice-section h2 {
+/* Textarea styling */
+textarea {
+    width: 100%;
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 12px;
+    padding: 12px;
+    font-family: inherit;
+    font-size: 1rem;
+    color: var(--text-primary);
+    resize: none;
+    outline: none;
     margin-bottom: 16px;
-    color: #1d4ed8;
+    transition: all 0.3s ease;
+}
+
+textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px var(--primary-glow);
+}
+
+/* Voice Page elements */
+.voice-section {
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 24px;
+    margin-top: 10px;
 }
 
 .voice-result-box {
-    background-color: #f8f9fa;
+    background: rgba(15, 23, 42, 0.3);
+    border-color: rgba(255, 255, 255, 0.04);
 }
 
-.voice-result-box p {
-    color: #0c4a6e;
-    font-weight: 700;
-}
-
-.voice-audio-box {
-    margin-top: 16px;
-    background-color: #f8fafc;
-}
-
-.voice-audio-box audio {
-    width: 100%;
-    margin-bottom: 8px;
-}
-
-.voice-audio-box p {
-    margin: 6px 0 10px;
-    color: #475569;
-    font-size: 0.95rem;
-}
-
-.voice-audio-box button {
-    padding: 8px 14px;
-    font-size: 14px;
-}
-
-.hidden {
-    display: none !important;
-}
-
-/* 關鍵：當相機開啟時，Capacitor 會在外層加上一個 class，我們要把背景變透明 */
-body.barcode-scanner-active {
-    background-color: transparent !important;
-}
-body.barcode-scanner-active #app-container {
-    display: none; /* 掃描時先隱藏原本的 UI，或者做一個十字準心 */
-}
-
+/* Web Scan Elements */
 #qr-video {
     display: none;
     position: fixed;
@@ -115,10 +446,55 @@ body.barcode-scanner-active #app-container {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    z-index: 999;
-    background: black;
+    z-index: 9999;
+    background: #000;
 }
 
 body.barcode-scanner-active #qr-video {
     display: block;
+}
+
+/* Animations */
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(16px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes blink {
+    0%, 100% { opacity: 0.3; }
+    50% { opacity: 1; }
+}
+
+@keyframes pulseGlow {
+    0% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+    }
+    70% {
+        box-shadow: 0 0 0 15px rgba(239, 68, 68, 0);
+    }
+    100% {
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+}
+
+/* Responsive adjustments */
+@media (max-width: 480px) {
+    body {
+        padding: 10px;
+    }
+    
+    .container {
+        padding: 20px 16px;
+        border-radius: 20px;
+    }
+    
+    h1 {
+        font-size: 1.7rem;
+    }
 }
