@@ -669,7 +669,7 @@ function parseIntentLocally(text) {
     if (result.intent !== "UNKNOWN") {
         processIntentByRiskLevel(result);
     } else {
-        alert('❌ 無法識別指令意圖，請換個說法試試。');
+        alert('無法識別指令意圖，請換個說法試試。');
         resetVoiceState();
     }
 }
@@ -695,11 +695,11 @@ function processIntentByRiskLevel(result) {
 
     } else if (result.risk === "MEDIUM") {
         speakTTS(`${bed}床，動作已記錄。`);
-        alert(`✅ [中風險] 記錄完成 (3秒復原期)\n意圖：${result.intent}`);
+        alert(`[中風險] 記錄完成 (3秒復原期)\n意圖：${result.intent}`);
         resetVoiceState();
         
     } else {
-        alert(`✅ [低風險] 直接寫入暫存結果\n意圖：${result.intent}\n擷取參數：${JSON.stringify(result.extractedData)}`);
+        alert(`[低風險] 直接寫入暫存結果\n意圖：${result.intent}\n擷取參數：${JSON.stringify(result.extractedData)}`);
         resetVoiceState();
     }
 }
@@ -708,11 +708,11 @@ function handleConfirmationState(text) {
     clearTimeout(confirmationTimeout);
 
     if (text.includes("確認") || text.includes("對") || text.includes("是")) {
-        alert(`✅ 給藥已確認！\n寫入 FHIR 資源：${pendingHighRiskAction.fhirResource}\n參數：${JSON.stringify(pendingHighRiskAction.extractedData)}`);
+        alert(`給藥已確認！\n寫入 FHIR 資源：${pendingHighRiskAction.fhirResource}\n參數：${JSON.stringify(pendingHighRiskAction.extractedData)}`);
     } else if (text.includes("取消") || text.includes("不")) {
-        alert("🚫 指令已取消。");
+        alert("指令已取消。");
     } else {
-        alert("❓ 聽不懂您的回覆，請明確說出『確認』或『取消』。");
+        alert("聽不懂您的回覆，請明確說出『確認』或『取消』。");
         // 重置倒數計時，繼續等待
         confirmationTimeout = setTimeout(() => { resetVoiceState(); }, 10000);
         return; 
