@@ -257,16 +257,12 @@ function resetStatus() {
 }
 
 // ==========================================
-// 語音辨識/錄音功能擴充 (完全獨立，不影響原本掃描)
+// 語音辨識/錄音功能擴充 (純文字本地辨識版)
 // ==========================================
 
-// 1. 初始化語音 DOM 元素 (請確保 HTML 有對應的 ID)
 const voiceButton = document.getElementById('start-voice-btn');
 const voiceResultEl = document.getElementById('voice-result');
 const voiceStatusEl = document.getElementById('voice-status');
-
-let voiceMediaRecorder = null;
-let voiceAudioChunks = [];
 
 // 2. 綁定語音按鈕點擊事件 (切換錄音狀態)
 if (voiceButton) {
@@ -274,136 +270,145 @@ if (voiceButton) {
 }
 
 async function toggleVoiceRecording() {
-    if (!voiceMediaRecorder || voiceMediaRecorder.state === 'inactive') {
-        await startVoiceRecording();
+    // 透過按鈕當前的文字來判斷要啟動還是停止
+    if (voiceButton.innerText.includes('停止')) {
+        await stopVoiceRecording();
     } else {
-        stopVoiceRecording();
+        await startVoiceRecording();
     }
 }
 
-// 3. 開始錄音
+// 3. 開始錄音 (呼叫本地語音轉文字)
 async function startVoiceRecording() {
-    voiceAudioChunks = []; // 清空之前的音檔暫存
-
     try {
-        if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
-            throw new Error('此裝置不支援 navigator.mediaDevices.getUserMedia。');
-        }
-
-        const micState = await getPermissionState('microphone');
-        if (micState === 'denied') {
-            alert('麥克風權限已被拒絕，請前往系統設定允許本 App 使用麥克風。');
+        const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
+        
+        if (!SpeechRecognition) {
+            alert('找不到 SpeechRecognition 外掛，請確認已安裝並執行 npx cap sync。');
             return;
         }
 
-        if (window.Capacitor && window.Capacitor.isNativePlatform()) {
-            console.log('偵測到 Android 原生環境，準備請求麥克風權限...');
+        // 檢查設備支援度
+        const { available } = await SpeechRecognition.available();
+        if (!available) {
+            alert('此設備不支援原生的語音辨識服務。');
+            return;
         }
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-        if (typeof MediaRecorder === 'undefined') {
-            stream.getTracks().forEach(track => track.stop());
-            throw new Error('此 WebView 目前不支援 MediaRecorder。');
+        // 請求權限
+        let perm = await SpeechRecognition.checkPermissions();
+        if (perm.speechRecognition !== 'granted') {
+            perm = await SpeechRecognition.requestPermissions();
+        }
+        
+        if (perm.speechRecognition !== 'granted') {
+            alert('必須允許語音辨識權限才能使用此功能！');
+            return;
         }
 
-        voiceMediaRecorder = new MediaRecorder(stream);
-
-        voiceMediaRecorder.ondataavailable = (event) => {
-            if (event.data && event.data.size > 0) {
-                voiceAudioChunks.push(event.data);
-            }
-        };
-
-        voiceMediaRecorder.onstop = () => {
-            const audioBlob = new Blob(voiceAudioChunks, { type: 'audio/webm' });
-            if (voiceStatusEl) {
-                voiceStatusEl.innerText = '狀態：錄音完成，正在發送音檔至後台...';
-            }
-            handleVoiceUploadMock(audioBlob);
-        };
-
-        voiceMediaRecorder.start();
-
-        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：正在聆聽中，請說話...';
+        // 更新 UI 為錄音中狀態
+        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：正在聆聽，請說出指令...';
         if (voiceButton) {
-            voiceButton.innerText = '停止錄音並解析';
-            voiceButton.style.backgroundColor = 'red';
+            voiceButton.innerText = '停止聆聽並分析';
+            voiceButton.style.backgroundColor = '#dc3545';
         }
 
-    } catch (error) {
-        console.error('麥克風啟動失敗:', error);
-
-        let extra = '';
-        try {
-            if (navigator.permissions && typeof navigator.permissions.query === 'function') {
-                const status = await navigator.permissions.query({ name: 'microphone' });
-                extra = '\n麥克風權限狀態：' + status.state;
+// 監聽即時辨識結果 (加上 data?.matches 保護)
+        SpeechRecognition.addListener('partialResults', (data) => {
+            if (data?.matches && data.matches.length > 0 && voiceResultEl) {
+                voiceResultEl.innerText = data.matches[0];
             }
-        } catch (permError) {
-            console.warn('無法查詢 microphone permission status', permError);
+        });
+
+        // 啟動辨識
+        const result = await SpeechRecognition.start({
+            language: "zh-TW",
+            maxResults: 1,
+            prompt: "請說出指令",
+            partialResults: true,
+            popup: true   // ⚠️ 強烈建議先設為 true，確保系統沒擋背景錄音
+        });
+
+        // 辨識成功，獲取最終文字 (加上 result?.matches 保護)
+        if (result?.matches && result.matches.length > 0) {
+            const finalTranscript = result.matches[0];
+            handleVoiceTextSuccess(finalTranscript);
         }
 
-        alert(
-            '無法啟動麥克風！\n原因：' +
-            (error.name || '未知錯誤') +
-            '\n' +
-            (error.message || '') +
-            extra +
-            '\n請確認系統設定中的應用程式權限，並重新啟動 App。'
-        );
+     } catch (error) {
+        console.error('語音辨識發生錯誤:', error);
+        // 加上這行，把真實錯誤印在手機畫面上
+        alert('語音錯誤詳情：' + (error.message || JSON.stringify(error))); 
+        
+        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：辨識中斷或發生錯誤';
+        restoreVoiceButtonUi();
     }
 }
 
 // 4. 停止錄音
-function stopVoiceRecording() {
-    if (voiceMediaRecorder && voiceMediaRecorder.state !== 'inactive') {
-        voiceMediaRecorder.stop();
-        
-        // 關閉軌道釋放麥克風硬體資源
-        voiceMediaRecorder.stream.getTracks().forEach(track => track.stop());
-        
-        // 恢復按鈕 UI
-        if (voiceButton) {
-            voiceButton.innerText = "開始語意輸入";
-            voiceButton.style.backgroundColor = ""; // 恢復 CSS 預設顏色
+async function stopVoiceRecording() {
+    try {
+        const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
+        if (SpeechRecognition) {
+            await SpeechRecognition.stop();
         }
+    } catch (error) {
+        console.warn('停止辨識時發生錯誤:', error);
+    } finally {
+        restoreVoiceButtonUi();
     }
 }
 
-// 5. 模擬商用 API (Google STT / Whisper) 回傳
-function handleVoiceUploadMock(blob) {
-    console.log("【前端音檔錄製成功】大小為：", blob.size, "bytes");
-    
-    // 模擬後端 API 的 1.5 秒網路延遲
-    setTimeout(() => {
-        // 【核心需求 1】保證高準確度文字，先用 mock 資料做介面驗證
-        const mockSpeechToTextResult = "幫我把A05倉庫的感冒藥提出十箱送到診間";
-        
-        if (voiceResultEl) {
-            voiceResultEl.innerText = mockSpeechToTextResult;
-        }
-        if (voiceStatusEl) {
-            voiceStatusEl.innerText = "狀態：語音辨識完成！";
-        }
-        
-        // 進入下一步的意圖拆解（未來會在 FastAPI 透過 LLM 做結構化拆解）
-        parseIntentAndDispatchMock(mockSpeechToTextResult);
-        
-    }, 1500);
+// 恢復按鈕預設狀態的共用函式
+function restoreVoiceButtonUi() {
+    if (voiceButton) {
+        voiceButton.innerText = "開始語意輸入";
+        voiceButton.style.backgroundColor = ""; 
+    }
 }
 
-// 6. 模擬自然語言意圖拆解與指令執行
-function parseIntentAndDispatchMock(text) {
-    // 這裡先寫一個簡單的文字比對邏輯，方便你在手機上驗證「文字轉指令」的連鎖反應
-    if (text.includes("倉庫") && text.includes("送")) {
-        console.log("【發送結構化指令至後台執行成功】", {
-            intent: "TRANSFER_MATERIAL",
-            parameters: {
-                raw_text: text,
-                parsed_at: new Date().toISOString()
-            }
-        });
+// 5. 處理最終純文字結果
+function handleVoiceTextSuccess(text) {
+    restoreVoiceButtonUi();
+    
+    if (voiceResultEl) voiceResultEl.innerText = text;
+    if (voiceStatusEl) voiceStatusEl.innerText = '狀態：語音辨識完成！';
+    
+    console.log("【前端取得純文字】準備進行本地語意分析:", text);
+    
+    // 直接在前端進行意圖拆解
+    parseIntentLocally(text);
+}
+
+// 6. 前端本地自然語言意圖拆解
+function parseIntentLocally(text) {
+    let intent = "UNKNOWN";
+    let parameters = {};
+
+    // 利用簡單的關鍵字進行本地分析，未來可擴充為更複雜的正則或邏輯
+    if (text.includes("倉庫") && (text.includes("送") || text.includes("提"))) {
+        intent = "TRANSFER_MATERIAL";
+        
+        // 嘗試提取數量 (簡易示範)
+        const amountMatch = text.match(/(一|二|三|四|五|六|七|八|九|十|\d+)[箱|個|盒]/);
+        if (amountMatch) {
+            parameters.amount = amountMatch[0];
+        }
+    } else if (text.includes("病歷") || text.includes("摘要")) {
+        intent = "FETCH_SUMMARY";
+    }
+
+    console.log("【前端意圖分析結果】", {
+        intent: intent,
+        extracted_text: text,
+        parameters: parameters,
+        parsed_at: new Date().toISOString()
+    });
+
+    if (intent !== "UNKNOWN") {
+        alert(`已識別指令：${intent}\n準備執行對應前端邏輯！`);
+    } else {
+        alert('無法識別指令意圖，請換個說法試試。');
     }
 }
 
