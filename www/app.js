@@ -407,7 +407,6 @@ class ClinicalSemanticParser {
         this.uniqueKeywords.sort((a, b) => b.length - a.length);
     }
 
-    // 🚀 核心新增：中文數字轉阿拉伯數字攔截器 (支援小數點與數量級)
     convertChineseNumbers(text) {
         const cnNums = { '零': 0, '一': 1, '二': 2, '兩': 2, '三': 3, '四': 4, '五': 5, '六': 6, '七': 7, '八': 8, '九': 9 };
         const cnUnits = { '十': 10, '百': 100, '千': 1000, '萬': 10000 };
@@ -462,7 +461,6 @@ class ClinicalSemanticParser {
         });
     }
 
-    // 🚀 核心升級：拼音前置校正層 (Fuzzy Pinyin Replacement)
     fuzzyPinyinReplace(text) {
         // 防呆：若 pinyinPro 未成功載入，退回原字串
         if (typeof pinyinPro === 'undefined') return text;
@@ -519,41 +517,72 @@ class ClinicalSemanticParser {
         return normalizedText;
     }
 
-    parse(rawText) {
-        const text = this.normalize(rawText);
-        // 💡 改用陣列來儲存所有匹配成功的意圖
-        let matchedIntents = [];
+    parseMultiple(rawText) {
+        const normalizedText = this.normalize(rawText);
+        
 
-        for (const rule of this.intentDict) {
-            let score = 0;
-            rule.keywords.forEach(kw => { 
-                if (fuzzyPinyinIncludes(text, kw, 0.8)) {
-                    score++; 
-                }
-            });
+        const segments = normalizedText.split(/(?<!\d)(?=\d+\s*床)/g).filter(s => s.trim().length > 0);
+        
+        let results = [];
+        let currentContext = { bed_number: null };
 
-            // 只要大於該意圖的門檻值，就收錄進來 (不再只留最高分)
-            if (score >= rule.threshold) {
-                matchedIntents.push({
-                    intent: rule.intent,
-                    risk: rule.risk,
-                    fhirResource: rule.fhirResource,
-                    score: score,
-                    extractedData: this.extractEntities(text, rule.extractors)
+        for (const segment of segments) {
+            // 2. 擷取這個片段的床號 (更新大腦記憶)
+            const bedMatch = segment.match(/(\d+)\s*床/);
+            if (bedMatch) {
+                currentContext.bed_number = bedMatch[1];
+            }
+
+            // 3. 多意圖觸發 (Multi-Label Matching)
+            let segmentIntents = [];
+
+            for (const rule of this.intentDict) {
+                let score = 0;
+                rule.keywords.forEach(kw => { 
+                    if (segment.includes(kw)) score++; 
                 });
+
+                if (score >= rule.threshold) {
+                    let extracted = this.extractEntities(segment, rule.extractors);
+                    
+                    // 自動繼承床號
+                    if (!extracted.find(d => d.entity === "bed_number") && currentContext.bed_number) {
+                        extracted.push({
+                            entity: "bed_number",
+                            value: currentContext.bed_number,
+                            codeSystem: "System",
+                            code: "Inherited"
+                        });
+                    }
+
+                    segmentIntents.push({
+                        intent: rule.intent,
+                        risk: rule.risk,
+                        fhirResource: rule.fhirResource,
+                        score: score,
+                        extractedData: extracted,
+                        rawText: segment
+                    });
+                }
+            }
+
+            // 4. 結果匯總
+            if (segmentIntents.length === 0) {
+                // 如果聽不懂但有床號，也回傳提示
+                results.push({
+                    intent: "UNKNOWN",
+                    risk: "LOW",
+                    fhirResource: null,
+                    score: 0,
+                    extractedData: currentContext.bed_number ? [{ entity: "bed_number", value: currentContext.bed_number }] : [],
+                    rawText: segment
+                });
+            } else {
+                results.push(...segmentIntents);
             }
         }
 
-        // 如果什麼都沒比對到，回傳 UNKNOWN
-        if (matchedIntents.length === 0) {
-            return [{ intent: "UNKNOWN", risk: "LOW", fhirResource: null, score: 0, extractedData: [] }];
-        }
-
-        // 💡 關鍵排序：依據風險等級排序，確保高風險 (HIGH) 的意圖排在最前面，優先讓護理人員確認
-        const riskWeight = { "HIGH": 3, "MEDIUM": 2, "LOW": 1 };
-        matchedIntents.sort((a, b) => riskWeight[b.risk] - riskWeight[a.risk]);
-
-        return matchedIntents; // 回傳的是一個陣列！
+        return results;
     }
 
     extractEntities(text, extractors) {
@@ -694,98 +723,110 @@ function parseIntentLocally(text) {
         return;
     }
 
-    const result = clinicalParser.parse(text);
-    console.log("【醫療語意分析結果】", result);
+    // 改呼叫 parseMultiple 取得多意圖陣列
+    const results = clinicalParser.parseMultiple(text);
+    console.log("【醫療多意圖分析結果】", results);
 
-    if (result.intent !== "UNKNOWN") {
-        processIntentByRiskLevel(result);
+    // 過濾掉 UNKNOWN 的結果，只處理有辨識出來的
+    const validResults = results.filter(r => r.intent !== "UNKNOWN");
+
+    if (validResults.length > 0) {
+        processMultipleIntents(validResults);
     } else {
-        alert('無法識別指令意圖，請重試。');
+        // 如果陣列裡只有 UNKNOWN
+        alert('無法識別指令意圖，請換個說法試試。');
         resetVoiceState();
     }
 }
 
-function processIntentByRiskLevel(result) {
-    const bed = result.extractedData.find(d => d.entity === 'bed_number')?.value || '未知';
+function processMultipleIntents(results) {
+    const hasHighRisk = results.some(r => r.risk === "HIGH");
+    const hasMediumRisk = results.some(r => r.risk === "MEDIUM");
 
-    if (result.risk === "HIGH") {
-        const drug = result.extractedData.find(d => d.entity === 'drug_name')?.value || '未知藥物';
-        const dose = result.extractedData.find(d => d.entity === 'dose')?.value || '';
-        const confirmMsg = `請確認：${bed}床病人，藥品 ${drug} ${dose}，是否確認給藥？`;
+    // 組合 UI 顯示用的摘要文字
+    let summaryLines = results.map((r, i) => {
+        const bed = r.extractedData.find(d => d.entity === 'bed_number')?.value || '未知';
+        let desc = `[${bed}床] ${r.intent}`;
+        if (r.intent === 'MEDICATION_GIVEN') {
+            const drug = r.extractedData.find(d => d.entity === 'drug_name')?.value || '未知藥';
+            const dose = r.extractedData.find(d => d.entity === 'dose')?.value || '';
+            desc += ` (${drug} ${dose})`;
+        }
+        return `${i + 1}. ${desc}`;
+    });
+    const summaryText = summaryLines.join('\n');
+
+    if (hasHighRisk) {
+        const confirmMsg = `解析出 ${results.length} 個指令，包含高風險給藥。是否全部確認？`;
+        pendingAction = { type: 'HIGH', actions: results }; 
         
-        pendingAction = { ...result, type: 'HIGH' };
         speakTTS(confirmMsg); 
-        if(voiceStatusEl) voiceStatusEl.innerText = `⚠️ 覆誦中：${confirmMsg} (請說確認或取消)`;
+        if(voiceStatusEl) voiceStatusEl.innerText = `待確認：\n${summaryText}\n\n(請說「確認」執行全部，或「取消」)`;
         
-        // 高風險：10秒未回應作廢
         confirmationTimeout = setTimeout(() => {
             if (pendingAction && pendingAction.type === 'HIGH') {
-                alert("⏳ 10秒內未明確回應，高風險指令作廢，請手動輸入。");
+                alert("10秒內未回應，高風險批次作廢。");
                 resetVoiceState();
             }
         }, 10000);
 
-    } else if (result.risk === "MEDIUM") {
-        const msg = `${bed}床動作已記錄，3秒無異議將自動寫入。`;
+    } else if (hasMediumRisk) {
+        const msg = `已記錄 ${results.length} 筆指令，3秒無異議將自動寫入。`;
         speakTTS(msg);
         
-        pendingAction = { ...result, type: 'MEDIUM' };
-        if(voiceStatusEl) voiceStatusEl.innerText = `⏳ 待確認：${msg} (可說「是/對」立即寫入)`;
+        pendingAction = { type: 'MEDIUM', actions: results };
+        if(voiceStatusEl) voiceStatusEl.innerText = `待確認：\n${summaryText}\n\n(3秒自動寫入，或說「取消」)`;
         
-        // 中風險：3秒預設接受機制
         confirmationTimeout = setTimeout(() => {
             if (pendingAction && pendingAction.type === 'MEDIUM') {
-                commitAction(pendingAction, "預設接受 (3秒逾時)");
+                commitMultipleActions(pendingAction.actions, "批次預設接受 (3秒逾時)");
             }
         }, 3000);
         
     } else {
-        commitAction(result, "無需確認 (低風險)");
+        commitMultipleActions(results, "批次無需確認 (全低風險)");
     }
 }
 
 function handleConfirmationState(text) {
     clearTimeout(confirmationTimeout);
 
-    if (pendingAction.type === 'HIGH') {
-        if (text.includes("確認") || text.includes("對") || text.includes("是")) {
-            commitAction(pendingAction, "口頭確認");
-        } else if (text.includes("取消") || text.includes("不")) {
-            alert("指令已取消。");
+    if (pendingAction.type === 'HIGH' || pendingAction.type === 'MEDIUM') {
+        if (text.includes("確認") || text.includes("對") || text.includes("是") || text.includes("好")) {
+            commitMultipleActions(pendingAction.actions, "口頭批次確認");
+        } else if (text.includes("取消") || text.includes("不") || text.includes("錯")) {
+            alert("批次指令已全部取消。");
             resetVoiceState();
         } else {
-            alert("聽不懂您的回覆，請明確說出『確認』或『取消』。");
-            confirmationTimeout = setTimeout(() => { 
-                if (pendingAction) {
-                    alert("⏳ 10秒內未明確回應，高風險指令作廢。");
-                    resetVoiceState();
-                }
-            }, 10000);
-        }
-    } else if (pendingAction.type === 'MEDIUM') {
-        if (text.includes("確認") || text.includes("對") || text.includes("是")) {
-            commitAction(pendingAction, "口頭確認");
-        } else if (text.includes("取消") || text.includes("不")) {
-            alert("指令已取消。");
-            resetVoiceState();
-        } else {
-            // 中風險遇到無關語音時，預設自動存入上筆結果，並將當前語音視為新指令處理
-            commitAction(pendingAction, "預設接受 (收到新指令)");
-            parseIntentLocally(text);
+            if (pendingAction.type === 'HIGH') {
+                alert("聽不懂您的回覆，請明確說出『確認』或『取消』。");
+                confirmationTimeout = setTimeout(() => { 
+                    alert("10秒內未明確回應，高風險指令作廢。");
+                    resetVoiceState(); 
+                }, 10000);
+            } else {
+                commitMultipleActions(pendingAction.actions, "批次預設接受 (收到無關新語音)");
+                parseIntentLocally(text); 
+            }
         }
     }
 }
 
-function commitAction(action, methodStr) {
-    alert(`✅ 寫入系統 [${action.risk}風險 - ${methodStr}]\nFHIR 資源：${action.fhirResource}\n意圖：${action.intent}\n參數：${JSON.stringify(action.extractedData)}`);
+function commitMultipleActions(actions, methodStr) {
+    console.log(`【批次紀錄留痕 - ${methodStr}】`, actions);
     
-    console.log("【紀錄留痕】", {
-        timestamp: new Date().toISOString(),
-        intent: action.intent,
-        risk: action.risk,
-        method: methodStr,
-        extracted: action.extractedData
-    });
+    // 將每一筆資料組合成詳細的字串（包含原有的 JSON 參數結構）
+    const detailedSummary = actions.map((a, index) => {
+         const bed = a.extractedData.find(d => d.entity === 'bed_number')?.value || '?';
+         return `[第 ${index + 1} 筆 - ${bed}床]
+FHIR 資源：${a.fhirResource}
+意圖：${a.intent}
+參數：${JSON.stringify(a.extractedData)}`;
+    }).join('\n\n------------------------\n\n');
+    
+    // 顯示詳細的 Alert 視窗
+    alert(`成功寫入 ${actions.length} 筆資料 [${methodStr}]\n\n${detailedSummary}`);
+    
     resetVoiceState();
 }
 
