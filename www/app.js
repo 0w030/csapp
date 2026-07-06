@@ -274,163 +274,163 @@ function resetStatus() {
     scanModeText.innerText = '目前掃描模式：等待判斷';
 }
 
-// ==========================================
-// 語音辨識/錄音功能擴充 (純文字本地辨識版)
-// ==========================================
+// // ==========================================
+// // 語音辨識/錄音功能擴充 (純文字本地辨識版)
+// // ==========================================
 
-const voiceButton = document.getElementById('start-voice-btn');
-const voiceResultEl = document.getElementById('voice-result');
-const voiceStatusEl = document.getElementById('voice-status');
+// const voiceButton = document.getElementById('start-voice-btn');
+// const voiceResultEl = document.getElementById('voice-result');
+// const voiceStatusEl = document.getElementById('voice-status');
 
-// 2. 綁定語音按鈕點擊事件 (切換錄音狀態)
-if (voiceButton) {
-    voiceButton.addEventListener('click', toggleVoiceRecording);
-}
+// // 2. 綁定語音按鈕點擊事件 (切換錄音狀態)
+// if (voiceButton) {
+//     voiceButton.addEventListener('click', toggleVoiceRecording);
+// }
 
-async function toggleVoiceRecording() {
-    // 透過按鈕當前的文字來判斷要啟動還是停止
-    if (voiceButton.innerText.includes('停止')) {
-        await stopVoiceRecording();
-    } else {
-        await startVoiceRecording();
-    }
-}
+// async function toggleVoiceRecording() {
+//     // 透過按鈕當前的文字來判斷要啟動還是停止
+//     if (voiceButton.innerText.includes('停止')) {
+//         await stopVoiceRecording();
+//     } else {
+//         await startVoiceRecording();
+//     }
+// }
 
-// 3. 開始錄音 (呼叫本地語音轉文字)
-async function startVoiceRecording() {
-    try {
-        const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
+// // 3. 開始錄音 (呼叫本地語音轉文字)
+// async function startVoiceRecording() {
+//     try {
+//         const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
         
-        if (!SpeechRecognition) {
-            alert('找不到 SpeechRecognition 外掛，請確認已安裝並執行 npx cap sync。');
-            return;
-        }
+//         if (!SpeechRecognition) {
+//             alert('找不到 SpeechRecognition 外掛，請確認已安裝並執行 npx cap sync。');
+//             return;
+//         }
 
-        // 檢查設備支援度
-        const { available } = await SpeechRecognition.available();
-        if (!available) {
-            alert('此設備不支援原生的語音辨識服務。');
-            return;
-        }
+//         // 檢查設備支援度
+//         const { available } = await SpeechRecognition.available();
+//         if (!available) {
+//             alert('此設備不支援原生的語音辨識服務。');
+//             return;
+//         }
 
-        // 請求權限
-        let perm = await SpeechRecognition.checkPermissions();
-        if (perm.speechRecognition !== 'granted') {
-            perm = await SpeechRecognition.requestPermissions();
-        }
+//         // 請求權限
+//         let perm = await SpeechRecognition.checkPermissions();
+//         if (perm.speechRecognition !== 'granted') {
+//             perm = await SpeechRecognition.requestPermissions();
+//         }
         
-        if (perm.speechRecognition !== 'granted') {
-            alert('必須允許語音辨識權限才能使用此功能！');
-            return;
-        }
+//         if (perm.speechRecognition !== 'granted') {
+//             alert('必須允許語音辨識權限才能使用此功能！');
+//             return;
+//         }
 
-        // 更新 UI 為錄音中狀態
-        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：正在聆聽，請說出指令...';
-        if (voiceButton) {
-            voiceButton.innerText = '停止聆聽並分析';
-            voiceButton.style.backgroundColor = '#dc3545';
-        }
+//         // 更新 UI 為錄音中狀態
+//         if (voiceStatusEl) voiceStatusEl.innerText = '狀態：正在聆聽，請說出指令...';
+//         if (voiceButton) {
+//             voiceButton.innerText = '停止聆聽並分析';
+//             voiceButton.style.backgroundColor = '#dc3545';
+//         }
 
-// 監聽即時辨識結果 (加上 data?.matches 保護)
-        SpeechRecognition.addListener('partialResults', (data) => {
-            if (data?.matches && data.matches.length > 0 && voiceResultEl) {
-                voiceResultEl.innerText = data.matches[0];
-            }
-        });
+// // 監聽即時辨識結果 (加上 data?.matches 保護)
+//         SpeechRecognition.addListener('partialResults', (data) => {
+//             if (data?.matches && data.matches.length > 0 && voiceResultEl) {
+//                 voiceResultEl.innerText = data.matches[0];
+//             }
+//         });
 
-        // 啟動辨識
-        const result = await SpeechRecognition.start({
-            language: "zh-TW",
-            maxResults: 1,
-            prompt: "請說出指令",
-            partialResults: true,
-            popup: true   // ⚠️ 強烈建議先設為 true，確保系統沒擋背景錄音
-        });
+//         // 啟動辨識
+//         const result = await SpeechRecognition.start({
+//             language: "zh-TW",
+//             maxResults: 1,
+//             prompt: "請說出指令",
+//             partialResults: true,
+//             popup: true   // ⚠️ 強烈建議先設為 true，確保系統沒擋背景錄音
+//         });
 
-        // 辨識成功，獲取最終文字 (加上 result?.matches 保護)
-        if (result?.matches && result.matches.length > 0) {
-            const finalTranscript = result.matches[0];
-            handleVoiceTextSuccess(finalTranscript);
-        }
+//         // 辨識成功，獲取最終文字 (加上 result?.matches 保護)
+//         if (result?.matches && result.matches.length > 0) {
+//             const finalTranscript = result.matches[0];
+//             handleVoiceTextSuccess(finalTranscript);
+//         }
 
-     } catch (error) {
-        console.error('語音辨識發生錯誤:', error);
-        // 加上這行，把真實錯誤印在手機畫面上
-        alert('語音錯誤詳情：' + (error.message || JSON.stringify(error))); 
+//      } catch (error) {
+//         console.error('語音辨識發生錯誤:', error);
+//         // 加上這行，把真實錯誤印在手機畫面上
+//         alert('語音錯誤詳情：' + (error.message || JSON.stringify(error))); 
         
-        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：辨識中斷或發生錯誤';
-        restoreVoiceButtonUi();
-    }
-}
+//         if (voiceStatusEl) voiceStatusEl.innerText = '狀態：辨識中斷或發生錯誤';
+//         restoreVoiceButtonUi();
+//     }
+// }
 
-// 4. 停止錄音
-async function stopVoiceRecording() {
-    try {
-        const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
-        if (SpeechRecognition) {
-            await SpeechRecognition.stop();
-        }
-    } catch (error) {
-        console.warn('停止辨識時發生錯誤:', error);
-    } finally {
-        restoreVoiceButtonUi();
-    }
-}
+// // 4. 停止錄音
+// async function stopVoiceRecording() {
+//     try {
+//         const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
+//         if (SpeechRecognition) {
+//             await SpeechRecognition.stop();
+//         }
+//     } catch (error) {
+//         console.warn('停止辨識時發生錯誤:', error);
+//     } finally {
+//         restoreVoiceButtonUi();
+//     }
+// }
 
-// 恢復按鈕預設狀態的共用函式
-function restoreVoiceButtonUi() {
-    if (voiceButton) {
-        voiceButton.innerText = "開始語意輸入";
-        voiceButton.style.backgroundColor = ""; 
-    }
-}
+// // 恢復按鈕預設狀態的共用函式
+// function restoreVoiceButtonUi() {
+//     if (voiceButton) {
+//         voiceButton.innerText = "開始語意輸入";
+//         voiceButton.style.backgroundColor = ""; 
+//     }
+// }
 
-// 5. 處理最終純文字結果
-function handleVoiceTextSuccess(text) {
-    restoreVoiceButtonUi();
+// // 5. 處理最終純文字結果
+// function handleVoiceTextSuccess(text) {
+//     restoreVoiceButtonUi();
     
-    if (voiceResultEl) voiceResultEl.innerText = text;
-    if (voiceStatusEl) voiceStatusEl.innerText = '狀態：語音辨識完成！';
+//     if (voiceResultEl) voiceResultEl.innerText = text;
+//     if (voiceStatusEl) voiceStatusEl.innerText = '狀態：語音辨識完成！';
     
-    console.log("【前端取得純文字】準備進行本地語意分析:", text);
+//     console.log("【前端取得純文字】準備進行本地語意分析:", text);
     
-    // 直接在前端進行意圖拆解
-    parseIntentLocally(text);
-}
+//     // 直接在前端進行意圖拆解
+//     parseIntentLocally(text);
+// }
 
-// 6. 前端本地自然語言意圖拆解
-function parseIntentLocally(text) {
-    let intent = "UNKNOWN";
-    let parameters = {};
+// // 6. 前端本地自然語言意圖拆解
+// function parseIntentLocally(text) {
+//     let intent = "UNKNOWN";
+//     let parameters = {};
 
-    // 利用簡單的關鍵字進行本地分析，未來可擴充為更複雜的正則或邏輯
-    if (text.includes("倉庫") && (text.includes("送") || text.includes("提"))) {
-        intent = "TRANSFER_MATERIAL";
+//     // 利用簡單的關鍵字進行本地分析，未來可擴充為更複雜的正則或邏輯
+//     if (text.includes("倉庫") && (text.includes("送") || text.includes("提"))) {
+//         intent = "TRANSFER_MATERIAL";
         
-        // 嘗試提取數量 (簡易示範)
-        const amountMatch = text.match(/(一|二|三|四|五|六|七|八|九|十|\d+)[箱|個|盒]/);
-        if (amountMatch) {
-            parameters.amount = amountMatch[0];
-        }
-    } else if (text.includes("病歷") || text.includes("摘要")) {
-        intent = "FETCH_SUMMARY";
-    }
+//         // 嘗試提取數量 (簡易示範)
+//         const amountMatch = text.match(/(一|二|三|四|五|六|七|八|九|十|\d+)[箱|個|盒]/);
+//         if (amountMatch) {
+//             parameters.amount = amountMatch[0];
+//         }
+//     } else if (text.includes("病歷") || text.includes("摘要")) {
+//         intent = "FETCH_SUMMARY";
+//     }
 
-    console.log("【前端意圖分析結果】", {
-        intent: intent,
-        extracted_text: text,
-        parameters: parameters,
-        parsed_at: new Date().toISOString()
-    });
+//     console.log("【前端意圖分析結果】", {
+//         intent: intent,
+//         extracted_text: text,
+//         parameters: parameters,
+//         parsed_at: new Date().toISOString()
+//     });
 
-    if (intent !== "UNKNOWN") {
-        alert(`已識別指令：${intent}\n準備執行對應前端邏輯！`);
-    } else {
-        alert('無法識別指令意圖，請換個說法試試。');
-    }
-}
+//     if (intent !== "UNKNOWN") {
+//         alert(`已識別指令：${intent}\n準備執行對應前端邏輯！`);
+//     } else {
+//         alert('無法識別指令意圖，請換個說法試試。');
+//     }
+// }
 
-// Previously attempted Capacitor Permissions.request helper was removed to revert to original flow.
+// // Previously attempted Capacitor Permissions.request helper was removed to revert to original flow.
 
 async function getPermissionState(permissionName) {
     try {
@@ -470,4 +470,264 @@ function updateDeviceUuidDisplay() {
 
 function logScanPackage(qrContent) {
     console.log({ qrContent, deviceId: deviceUuid });
+}
+
+// ==========================================
+// 臨床語意解析引擎 (Clinical Semantic Parser Class)
+// ==========================================
+class ClinicalSemanticParser {
+    constructor(vocabMap, intentDict) {
+        this.vocabMap = vocabMap;
+        this.intentDict = intentDict;
+    }
+
+    normalize(text) {
+        let normalizedText = text.toLowerCase();
+        for (const [slang, standard] of Object.entries(this.vocabMap)) {
+            const regex = new RegExp(slang, "gi");
+            normalizedText = normalizedText.replace(regex, standard);
+        }
+        return normalizedText;
+    }
+
+    parse(rawText) {
+        const text = this.normalize(rawText);
+        let bestMatch = { intent: "UNKNOWN", risk: "LOW", fhirResource: null, score: 0, extractedData: [] };
+
+        for (const rule of this.intentDict) {
+            let score = 0;
+            rule.keywords.forEach(kw => { if (text.includes(kw)) score++; });
+
+            if (score >= rule.threshold && score > bestMatch.score) {
+                bestMatch.intent = rule.intent;
+                bestMatch.risk = rule.risk;
+                bestMatch.fhirResource = rule.fhirResource;
+                bestMatch.score = score;
+                bestMatch.extractedData = this.extractEntities(text, rule.extractors);
+            }
+        }
+        return bestMatch;
+    }
+
+    extractEntities(text, extractors) {
+        const results = [];
+        if (!extractors) return results;
+
+        for (const ext of extractors) {
+            const match = text.match(ext.regex);
+            if (match) {
+                // 取得匹配的數值部分 (排除第 0 組完整匹配與第 1 組標籤名稱)
+                let values = match.slice(2).filter(val => val !== undefined);
+                results.push({
+                    entity: ext.entity,
+                    value: values.length > 1 ? values.join('/') : values[0],
+                    codeSystem: ext.codeSystem,
+                    code: ext.code
+                });
+            }
+        }
+        return results;
+    }
+}
+
+// ==========================================
+// 語音辨識/錄音功能與狀態管理
+// ==========================================
+const voiceButton = document.getElementById('start-voice-btn');
+const voiceResultEl = document.getElementById('voice-result'); // 現在這是一個 textarea
+const voiceStatusEl = document.getElementById('voice-status');
+const analyzeTextBtn = document.getElementById('analyze-text-btn');
+
+if (analyzeTextBtn) {
+    analyzeTextBtn.addEventListener('click', () => {
+        // 取得使用者修改後的最終文字
+        const currentText = voiceResultEl.value; 
+        if (currentText && !currentText.includes("等待語音輸入")) {
+            parseIntentLocally(currentText);
+        } else {
+            alert("請先輸入或錄製指令內容！");
+        }
+    });
+}
+
+console.log("語音按鈕狀態：", voiceButton);
+
+// 實例化解析器 (依賴 dictionary.js)
+const clinicalParser = new ClinicalSemanticParser(ClinicalVocabularyMap, ClinicalIntentDictionary);
+
+// 全域狀態：高風險指令的多輪確認機制
+let pendingHighRiskAction = null;
+let confirmationTimeout = null;
+
+if (voiceButton) {
+    voiceButton.addEventListener('click', toggleVoiceRecording);
+}
+
+async function toggleVoiceRecording() {
+    // 💡 加入這行來測試！如果點了沒跳視窗，代表按鈕根本沒綁定成功
+    alert("按鈕有被點擊到！進入 toggleVoiceRecording"); 
+    
+    if (voiceButton.innerText.includes('停止')) {
+        await stopVoiceRecording();
+    } else {
+        await startVoiceRecording();
+    }
+}
+
+async function startVoiceRecording() {
+    try {
+        const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
+        if (!SpeechRecognition) {
+            alert('本地開發環境無 Capacitor 語音外掛，為您模擬輸入測試。');
+            // 開發環境下，直接用 Prompt 模擬語音輸入
+            const mockInput = prompt("請輸入模擬語音測試（如：幫4床打 Insulin 4單位）：");
+            if(mockInput) handleVoiceTextSuccess(mockInput);
+            return;
+        }
+
+        const { available } = await SpeechRecognition.available();
+        if (!available) return alert('此設備不支援原生的語音辨識服務。');
+
+        let perm = await SpeechRecognition.checkPermissions();
+        if (perm.speechRecognition !== 'granted') perm = await SpeechRecognition.requestPermissions();
+        if (perm.speechRecognition !== 'granted') return alert('必須允許語音辨識權限！');
+
+        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：正在聆聽，請說出指令...';
+        if (voiceButton) {
+            voiceButton.innerText = '停止聆聽並分析';
+            voiceButton.style.backgroundColor = '#dc3545';
+        }
+
+        SpeechRecognition.addListener('partialResults', (data) => {
+            if (data?.matches && data.matches.length > 0 && voiceResultEl) {
+                // textarea 必須使用 .value 來寫入文字
+                voiceResultEl.value = data.matches[0]; 
+            }
+        });
+
+        const result = await SpeechRecognition.start({ language: "zh-TW", maxResults: 1, prompt: "請說出指令", partialResults: true, popup: true });
+        if (result?.matches && result.matches.length > 0) {
+            handleVoiceTextSuccess(result.matches[0]);
+        }
+     } catch (error) {
+        alert('語音錯誤詳情：' + (error.message || JSON.stringify(error))); 
+        if (voiceStatusEl) voiceStatusEl.innerText = '狀態：辨識中斷或發生錯誤';
+        restoreVoiceButtonUi();
+    }
+}
+
+async function stopVoiceRecording() {
+    try {
+        const SpeechRecognition = window.Capacitor?.Plugins?.SpeechRecognition;
+        if (SpeechRecognition) await SpeechRecognition.stop();
+    } catch (error) {
+        console.warn('停止辨識時發生錯誤:', error);
+    } finally {
+        restoreVoiceButtonUi();
+    }
+}
+
+function restoreVoiceButtonUi() {
+    if (voiceButton) {
+        voiceButton.innerText = "開始語意輸入";
+        voiceButton.style.backgroundColor = ""; 
+    }
+}
+
+// 處理語音轉文字的結果
+function handleVoiceTextSuccess(text) {
+    restoreVoiceButtonUi();
+    
+    // textarea 必須使用 .value 來寫入文字
+    if (voiceResultEl) voiceResultEl.value = text; 
+    
+    // 判斷目前的狀態，決定是否自動送出分析
+    if (pendingHighRiskAction) {
+        // 情況 A：目前正在等待高風險確認 (只需回答確認或取消)，直接自動送出分析
+        parseIntentLocally(text);
+    } else {
+        // 情況 B：一般輸入新指令，停下來讓護理人員有機會手動編輯錯字
+        if (voiceStatusEl) {
+            voiceStatusEl.innerText = '狀態：辨識完成。請確認文字，必要時可手動修改，再點擊下方「確認文字無誤並分析」';
+        }
+        console.log("【暫停分析】等待使用者手動確認文字內容：", text);
+    }
+}
+
+// 核心流程：本地解析與風險多輪確認
+function parseIntentLocally(text) {
+    // 1. 若處於等待覆議狀態，視為「確認/取消」的回覆
+    if (pendingHighRiskAction) {
+        handleConfirmationState(text);
+        return;
+    }
+
+    // 2. 正常指令解析
+    const result = clinicalParser.parse(text);
+    console.log("【醫療語意分析結果】", result);
+
+    if (result.intent !== "UNKNOWN") {
+        processIntentByRiskLevel(result);
+    } else {
+        alert('❌ 無法識別指令意圖，請換個說法試試。');
+        resetVoiceState();
+    }
+}
+
+function processIntentByRiskLevel(result) {
+    const bed = result.extractedData.find(d => d.entity === 'bed_number')?.value || '未知';
+
+    if (result.risk === "HIGH") {
+        const drug = result.extractedData.find(d => d.entity === 'drug_name')?.value;
+        const dose = result.extractedData.find(d => d.entity === 'dose')?.value;
+        const confirmMsg = `請確認：${bed}床病人，藥品 ${drug} ${dose}，是否確認給藥？`;
+        
+        pendingHighRiskAction = result;
+        speakTTS(confirmMsg); 
+        if(voiceStatusEl) voiceStatusEl.innerText = `⚠️ 覆誦中：${confirmMsg} (請說確認或取消)`;
+        
+        confirmationTimeout = setTimeout(() => {
+            if (pendingHighRiskAction) {
+                alert("⏳ 10秒內未回應，高風險指令作廢。");
+                resetVoiceState();
+            }
+        }, 10000);
+
+    } else if (result.risk === "MEDIUM") {
+        speakTTS(`${bed}床，動作已記錄。`);
+        alert(`✅ [中風險] 記錄完成 (3秒復原期)\n意圖：${result.intent}`);
+        resetVoiceState();
+        
+    } else {
+        alert(`✅ [低風險] 直接寫入暫存結果\n意圖：${result.intent}\n擷取參數：${JSON.stringify(result.extractedData)}`);
+        resetVoiceState();
+    }
+}
+
+function handleConfirmationState(text) {
+    clearTimeout(confirmationTimeout);
+
+    if (text.includes("確認") || text.includes("對") || text.includes("是")) {
+        alert(`✅ 給藥已確認！\n寫入 FHIR 資源：${pendingHighRiskAction.fhirResource}\n參數：${JSON.stringify(pendingHighRiskAction.extractedData)}`);
+    } else if (text.includes("取消") || text.includes("不")) {
+        alert("🚫 指令已取消。");
+    } else {
+        alert("❓ 聽不懂您的回覆，請明確說出『確認』或『取消』。");
+        // 重置倒數計時，繼續等待
+        confirmationTimeout = setTimeout(() => { resetVoiceState(); }, 10000);
+        return; 
+    }
+    resetVoiceState();
+}
+
+function resetVoiceState() {
+    pendingHighRiskAction = null;
+    if (voiceStatusEl) voiceStatusEl.innerText = '狀態：語音辨識完成！點擊按鈕再次開始';
+}
+
+function speakTTS(message) {
+    // 使用瀏覽器 Web Speech API 播報語音
+    const utterance = new SpeechSynthesisUtterance(message);
+    utterance.lang = 'zh-TW';
+    window.speechSynthesis.speak(utterance);
 }
